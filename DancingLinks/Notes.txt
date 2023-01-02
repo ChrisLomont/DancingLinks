@@ -1,0 +1,24 @@
+﻿Chris Lomont 2022
+
+Matrix 0s and 1s, 
+columns represent 'items'
+rows represent 'options'
+Some items 'primary' and some 'secondary'
+Every option contains at least one primary item
+Problem is to find options so that 
+ 1) exactly 1 item for primary, 
+ 2) at most 1 for secondary
+
+Input on stdin (TODO)
+one line with space separated items 
+each item has symbolic name (Knuth limits to 8 chars)
+any non-blank ASCII except : and pipe '|' (0x7c)
+all primary items, then '|' , then all secondary
+
+then one option per line, option is list of item names
+
+comment lines start with '|', ignored
+
+
+
+
