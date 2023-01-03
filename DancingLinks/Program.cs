@@ -7,14 +7,116 @@ Console.WriteLine("Dancing links testing and experiments");
 // all reuse this - allows nicer control of settings
 var dl = new DancingLinksSolver();
 
+// todo - get toy dlx, toy secondary, toy colors, toy mult, toy mult with colors, etc. to quickly catch errors
+// test toy problems
+Test(1, () => ToyDlxPage68());
+Test(1, () => ToyColorPage89(dump: false));
+Test(92, () => NQueens(8, useSecondary: true));
+Test(1, ()=>ToyMultiplicity());
+Test(1, () => ToyMultiplicityWithColor());
+
 // some options
 dl.SetOutput(Console.Out);
-dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+//dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
 //dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
-dl.Options.MemsDumpStepSize = 100_000_000;
+//dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+//dl.Options.MemsDumpStepSize = 100_000;
 //dl.Options.MemsDumpStepSize = 10_000_000;
 //dl.Options.MinimumRemainingValuesHeuristic = false;
 
+// should have solutions for n = 8
+//WainwrightPackingPage92(8); // long, needs tested
+//return;
+//for (var n = 1; n <=5; ++n)
+//{
+//    Console.WriteLine("Wain " + n);
+//    WainwrightPackingPage92(n);
+//}
+
+
+// requires 5 queens to attack all squares
+//NQueenCover(1, 8);
+//NQueenCover(2, 8);
+//NQueenCover(3, 8);
+//NQueenCover(4, 8);
+// NQueenCover(5, 8); // 4680 solns, 15 gigamems - TODO  -hits printing bug on progress - fgure out?
+
+
+return;
+
+//ToyMultiplicityWithColor();
+
+long NQueenCover(int m, int n)
+{ // how many queens to cover nxn, uses multiplicities
+    dl.Clear();
+    for (var i = 0; i < n; ++i)
+    for (var j = 0; j < n; ++j)
+        dl.AddItem(Cell(i,j), lowerBound:1, upperBound:m);
+    dl.AddItem("#",lowerBound:m, upperBound:m); // number tag
+
+    for (var i = 0; i < n; ++i)
+    for (var j = 0; j < n; ++j)
+    {
+        var opt = $"# {Cell(i,j)} "; // start pos
+        // attacked squares
+        for (var di = -1; di <= 1; ++di)
+        for (var dj = -1; dj <= 1; ++dj)
+        {
+            if (di == 0 && dj == 0) continue;
+            var (x, y) = (i + di, j + dj);
+            while (0 <= x && 0 <= y && x < n && y < n)
+            {
+                opt += Cell(x, y) + " ";
+                x += di;
+                y += dj;
+            }
+        }
+
+        dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    string Cell(int i, int j) => $"c_{i}_{j}";
+
+
+            dl.Solve();
+    return dl.SolutionCount;
+}
+
+long WainwrightPackingPage92(int n)
+{
+    //n = 2;
+    dl.Clear();
+    // N=(1+2+..+n)^2=1^3+2^3+...+n^3
+    var N = n * (n + 1) / 2; // 1+2+3..+n
+    for (var i = 0; i < N; ++i)
+    for (var j = 0; j < N; ++j)
+        dl.AddItem($"c_{i}_{j}"); // cell i,j
+    for (var k = 1; k <= n; ++k)
+        dl.AddItem($"k_{k}", lowerBound:k, upperBound:k); // cover each of these k times
+
+
+    for (var k = 1; k <= n; ++k)
+    {
+        for (var i = 0; i <= N - k; ++i)
+        for (var j = 0; j <= N - k; ++j)
+        {
+            var opt = $"k_{k} ";
+            for (var di = 0; di < k; ++di)
+            for (var dj = 0; dj < k; ++dj)
+                opt += $"c_{i+di}_{j+dj} ";
+           // Console.WriteLine(opt);
+            dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        }
+    }
+
+    dl.Solve();
+    return dl.SolutionCount;
+
+}
+
+return;
+//Test(64,Exercise94); // tests colors
+//return;
 
 // tests - nothing super long to check
 //Test(8, () => PolyominoesRectangle(20, 3));
@@ -22,17 +124,16 @@ dl.Options.MemsDumpStepSize = 100_000_000;
 //Test(500,()=>TestRandomVersusBruteForce(numTests:500));
 //Test(520,ScottsPentominoProblem); // 520 solutions
 
-TestMult();
+//return;
 
-return;
-
-// WordCube(4);
+//WordCube(4);
 //Page68(dumpState: false);
 //Dudney(); // 16146, ERROR - we do not match
-//ToyColorPage89();
+ToyColorPage89(false);
 //DoubleWordSquare(6);
 //WordCube(3);
 
+return;
 
 //PackYSquare();
 //return;
@@ -116,37 +217,48 @@ Trace.Assert(LangfordPairs(3, false)==2);
 //Trace.Assert(LangfordPairs(16,true,1_000_000) == 326_721_800);
 #endif
 
-
-long TestMult()
+long ToyMultiplicity(bool dump=false)
 {
-    /*
-     * | A simple example of color controls
-     *
-    A B 2:3|C | X Y
-        A B X:0 Y: 0
-    A C X:1 Y: 1
-    C X:0
-    B X:1
-    C Y:1
-
-    has unique solution of options {A C X:1 Y:1}  { B X:1}
-    { C Y:1}
-    */
+    dl.Clear();
 
     dl.AddItem("A");
     dl.AddItem("B");
-    dl.AddItem("C", secondary: false, lowerBound:2, upperBound:3);
+    dl.AddItem("C", lowerBound: 2, upperBound: 3);
+    dl.AddOption(new[] { "A", "B", "C" });
+    dl.AddOption(new[] { "C" });
+
+    if (dump)
+        dl.DumpNodes(Console.Out);
+
+    dl.Solve();
+    return dl.SolutionCount;
+}
+
+
+long ToyMultiplicityWithColor(bool dump=false)
+{
+    // simple example with mult and colors
+    dl.Clear();
+
+    dl.AddItem("A");
+    dl.AddItem("B");
+    dl.AddItem("C", lowerBound: 2, upperBound: 3);
     dl.AddItem("X", secondary: true);
     dl.AddItem("Y", secondary: true);
 
-    dl.AddOption(new[] { "A", "B", "X:0", "Y:0" });
-    dl.AddOption(new[] { "A", "C", "X:1", "Y:1" });
-    dl.AddOption(new[] { "C", "X:0" });
-    dl.AddOption(new[] { "B", "X:1" });
-    dl.AddOption(new[] { "C", "Y:1" });
+    dl.AddOption(new[] {"A", "B", "X:1", "Y:1"});
+    dl.AddOption(new[] {"A", "C", "X:2", "Y:2"});
+    dl.AddOption(new[] {"C", "X:1"});
+    dl.AddOption(new[] {"B", "X:2"});
+    dl.AddOption(new[] {"C", "Y:2"});
+
+    // unique solution { A C X:2 Y:2} { B X:2}  { C Y:2}
+
+    if (dump)
+        dl.DumpNodes(Console.Out);
 
     dl.Solve();
-    return dl.Stats.SolutionCount;
+    return dl.SolutionCount;
 }
 
 
@@ -220,7 +332,7 @@ long WordCube(int n)
 
     dl.Solve();
 
-    return dl.Stats.SolutionCount;
+    return dl.SolutionCount;
 
     string Cell(int i, int j, int k) => $"c_{i}_{j}_{k}";
 
@@ -286,7 +398,7 @@ long DoubleWordSquare(int n)
 
     string Cell(int i, int j) => $"c_{i}_{j}";
 
-    return  dl.Stats.SolutionCount;
+    return  dl.SolutionCount;
 }
 
 
@@ -300,8 +412,9 @@ void Test(long answer, Func<long> func)
     Trace.Assert(answer==ans);
 }
 
-void ToyColorPage89()
+long ToyColorPage89(bool dump)
 {
+    dl.Clear();
     // three primary, two secondary
     dl.AddItem("p");
     dl.AddItem("q");
@@ -317,11 +430,42 @@ void ToyColorPage89()
 
     // solution: 'q x' and 'p r x y' // todo - needs colors chosen also on output
     
-    dl.DumpNodes(Console.Out);
+    if (dump)
+        dl.DumpNodes(Console.Out);
     
     
     dl.Solve();
+    return dl.SolutionCount;
+}
 
+long Exercise94()
+{// tests colors
+    // has unique solution, up to cyclic perm, complementation, reflection, so 1 * 16 * 2 * 2 = 64 solutions
+    dl.Clear();
+    for (var k = 0; k < 16; ++k)
+    {
+        dl.AddItem(k.ToString());
+        dl.AddItem("p"+k);
+    }
+    for (var k = 0; k < 16; ++k)
+        dl.AddItem("x" + k,secondary:true);
+
+    for (var j = 0; j < 16; ++j)
+    for (var k = 0; k < 16; ++k)
+    {
+        // j pk xk:a x(k+1):b x(k+3):c x(k+4):d
+        // where indices taken mod 16, j = abcd in binary
+        var d = j & 1;
+        var c = (j >> 1) & 1;
+        var b = (j >> 2) & 1;
+        var a = (j >> 3) & 1;
+
+        var opt = $"{j} p{k} x{k}:{a} x{(k + 1) % 16}:{b} x{(k + 3) % 16}:{c} x{(k + 4) % 16}:{d}";
+        dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    dl.Solve();
+    return dl.SolutionCount;
 }
 
 // test if all pass, else report and throw
@@ -397,7 +541,7 @@ long TestRandomVersusBruteForce(bool showResults = false, int numTests = 1000)
         dl.SetOutput(sw);
         dl.Solve();
         dl.SetOutput(Console.Out);
-        return dl.Stats.SolutionCount;
+        return dl.SolutionCount;
     }
 
     // Solve a count by brute force
@@ -572,7 +716,7 @@ long Polyominoes(
     if (dumpAll)
         dl.SolutionListener -= Dump;
 
-    return dl.Stats.SolutionCount;
+    return dl.SolutionCount;
 
     // turn piece position into option
     string[] MakeOption(Polyominoes.Piece piece)
@@ -688,7 +832,7 @@ long NQueens(int n, bool organPipe = false, bool mrv = false, bool useSecondary 
     //dl.ProgressDelta = 10_000_000;
     dl.Options.MinimumRemainingValuesHeuristic = mrv;
     dl.Solve();
-    return dl.Stats.SolutionCount;
+    return dl.SolutionCount;
 }
 
 long ScottsPentominoProblem()
@@ -751,10 +895,10 @@ long LangfordPairs(int n, bool useExercise15 = false)
 
     dl.Solve();
     Console.WriteLine();
-    return dl.Stats.SolutionCount;
+    return dl.SolutionCount;
 }
 
-void Page68(bool dumpState=false)
+long ToyDlxPage68(bool dumpState=false)
 {
     dl.Clear();
 
@@ -773,5 +917,6 @@ void Page68(bool dumpState=false)
     if (dumpState)
         dl.DumpNodes(Console.Out); // check against page 68 TAOCP 4B
     dl.Solve();
-    Trace.Assert(dl.Stats.SolutionCount == 1);
+
+    return dl.SolutionCount;
 }

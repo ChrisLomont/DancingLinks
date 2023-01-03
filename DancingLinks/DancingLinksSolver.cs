@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.Win32;
+using System.Diagnostics;
+using System.IO;
 
 namespace Lomont.Algorithms;
 
@@ -52,7 +54,7 @@ public class DancingLinksSolver
 
 
     /* TODO
-     Things to implement
+    - MIT license
     - extend to have a name for each row, and return row names in solution 
     - DONE: move namespace to match other Lomont DL
     - DONE: add color codes algo as generalization XC = exact cover, XCC = with colors
@@ -229,18 +231,16 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     /// <param name="upperBound"></param>
     public void AddItem(string name, bool secondary = false, int lowerBound = 1, int upperBound = 1)
     {
+        // track N = # items, N1 = primary items
+
         // TODO - rewrite to be cleaner: track list of items, then gen all once all are added
         // as in exercise 8
 
         // handle secondary items
         if (secondary)
-        {
-            // ensure first one, none after
-            if (second < 0)
-                second = NodeCount; // todo - correct?
-        }
+            N2++;
         else
-            Trace.Assert(second < 0); // rest must be secondary!
+            Trace.Assert(N2 == 0); // all must be primary before first secondary, then all secondary
 
 
         var i = AddNode(false) + 1;
@@ -264,21 +264,18 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         ULINK(x, x); // point to self
         DLINK(x, x);
 
-        var N = NodeCount - 1;
-        if (second >= 0)
+        if (N2>0)
         {
-            var N1 = second - 1;
-
             // (link one less than second to 0)
             LLINK(0, N1);
             RLINK(N1, 0);
 
             // (link second to end)
-            LLINK(second, N);
-            RLINK(N, second);
+            LLINK(N1+1, N);
+            RLINK(N, N1+1);
         }
 
-        // only promary items can have these)
+        // only primary items can have these)
         Trace.Assert(!secondary || (lowerBound == 1 && upperBound == 1),
             "Secondary items cannot have lower or upper bounds that are not 1");
 
@@ -436,41 +433,26 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     #region Stats
 
+    public long SolutionCount => Stats.SolutionCount;
     public LogStats Stats { get; private set; }
 
     public class LogStats
     {
-        DancingLinksSolver dl;
 
-        public LogStats(DancingLinksSolver dl)
-        {
-            this.dl = dl;
-        }
+        public LogStats(DancingLinksSolver dl) => this.dl = dl;
 
         public long SolutionCount { get; set; }
         public long Updates { get; private set; }
 
         public void Update() => Updates++;
 
-        int maxLevelSeen = 0; // max level seen while searching
-        int maxDegree = 0;
-
-        long nodeCount = 0; // nodes walked
-        // (one up and down is one mem, basically # of 64 bit line accesses
-        // nodes padded with _reserve_ field to pad to 128 bits to match Knuth
-
-        long memAccesses = 0; // each mem access 
-        long inputMemAccesses = 0; // mems to initialize, set in solver
+        // max possible level 
+        public int maxAllowedLevel = 0;
 
         /// <summary>
         /// Increment mems
         /// </summary>
         public void Mem() => memAccesses++;
-
-        int maxAllowedlevel = 0;
-        long[] profile = new long[1];
-        long nextMemoryDump = -1; // next memory threshold for output, or -1 when eeding set
-        int[] choice = new int[1]; // current choice index
 
         public void ResetStats(int optionCount)
         {
@@ -483,117 +465,22 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             memAccesses = 0; 
             inputMemAccesses = 0;
             nextMemoryDump = -1; // memory threshold
-            maxAllowedlevel = optionCount + 1;
-            profile = new long[optionCount + 1];
+            
+            // max allowed levels is (optionCount+1) * max of bounds
+            maxAllowedLevel = optionCount + 1;
+            if (dl.hasMultiplicities)
+                maxAllowedLevel *= dl.bound.Max();
+
+            profile = new long[maxAllowedLevel];
             choice = new int[optionCount + 1];
         }
 
-        // timer
-        public Stopwatch timer = new();
+        // timer for timing entire solution search
+        Stopwatch timer = new();
 
-        public void StartTimer()
-        {
-            timer.Reset();
-            timer.Start();
-        }
+        public void StartTimer() => timer.Restart();
 
-        public void StopTimer()
-        {
-            timer.Stop();
-        }
-
-        void PrintOption(int p)
-        {
-            int k, q;
-            if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
-            {
-                dl.output.WriteLine($"Illegal option {p}!");
-                return;
-            }
-
-            for (q = p;;)
-            {
-                dl.output.Write($" {dl.NAME(dl.TOP(q))}");
-                q++;
-                if (dl.TOP(q) <= 0) q = dl.ULINK(q);
-                if (q == p) break;
-            }
-
-            for (q = dl.DLINK(dl.TOP(p)), k = 1; q != p; k++)
-            {
-                if (q == dl.TOP(p))
-                {
-                    dl.output.WriteLine(" (?)");
-                    return;
-                }
-                else
-                    q = dl.DLINK(q);
-            }
-
-            dl.output.WriteLine($" ({k} of {dl.LEN(dl.TOP(p))})");
-        }
-
-        void PrintState(int level, int[] choice)
-        {
-            // based on Exercise #12, as noted on page 73
-
-            dl.output.WriteLine($"Current state (level {level})");
-            for (var l = 0; l < level; l++)
-            {
-                PrintOption(choice[l]);
-                if (l >= dl.Options.ShowLevelMax)
-                {
-                    dl.output.WriteLine(" ...");
-                    break;
-                }
-            }
-
-            dl.output.WriteLine($"{SolutionCount} solutions, {memAccesses} mems, and max level {maxLevelSeen} so far.");
-        }
-
-        void PrintProgress(int level, int[] choice)
-        {
-            // based on Exercise #12, as noted on page 73
-
-            dl.output.Write($" after {memAccesses} mems: {SolutionCount} sols,");
-            double f = 0, fd = 1;
-
-            for (var l = 0; l < level; l++)
-            {
-                var c = dl.TOP(choice[l]);
-                var d = dl.LEN(c);
-
-                int k, p;
-                for (k = 1, p = dl.DLINK(c); p != choice[l]; k++)
-                {
-                    p = dl.DLINK(p);
-                }
-
-                fd *= d;
-                f += (k - 1) / fd;
-                dl.output.Write($"{Enc(k)}{Enc(d)} ");
-
-                if (l >= dl.Options.ShowLevelMax)
-                {
-                    dl.output.Write("...");
-                    break;
-                }
-            }
-
-            char
-                Enc(int num) => (char)(
-                num switch
-                {
-                    < 10 => '0' + num,
-                    < 36 => 'a' + num - 10,
-                    < 62 => 'A' + num - 36,
-                    _ => '*'
-                }
-            );
-
-            dl.output.WriteLine($" {(f + 0.5 / fd):F5}");
-        }
-
+        public void StopTimer() => timer.Stop();
         public bool TrackMemory(int level, int[] x)
         {
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Profile))
@@ -602,7 +489,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             nodeCount++; // nodes explored
 
             if (nextMemoryDump == -1) nextMemoryDump = dl.Options.MemsDumpStepSize;
-            if (dl.Options.MemsDumpStepSize > 0 && (memAccesses >= nextMemoryDump))
+            if (dl.Options.MemsDumpStepSize > 0 && (memAccesses >= nextMemoryDump) && 
+                dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Basics))
             {
                 nextMemoryDump += dl.Options.MemsDumpStepSize;
                 if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.FullState)) PrintState(level, x);
@@ -622,7 +510,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         {
             if (l > maxLevelSeen)
             {
-                if (l >= maxAllowedlevel)
+                if (l >= maxAllowedLevel)
                 {
                     dl.output.WriteLine("Too many levels!");
                     return true; // done
@@ -708,7 +596,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 dl.output.Write("Item totals:");
                 for (var k = 1; k < dl.NameNodeCount; k++)
                 {
-                    if (k == dl.second)
+                    if (k == dl.N1)
                         dl.output.Write(" |");
                     dl.output.Write($" {dl.LEN(k)}");
                 }
@@ -744,6 +632,142 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 dl.Options.ShapeOutput.Close(); // todo -  dont; close console.out - how to cloe file but not this?
         }
 
+        #region Implementation
+
+        DancingLinksSolver dl;
+        int maxLevelSeen = 0; // max level seen while searching
+        int maxDegree = 0;
+
+        long nodeCount = 0; // nodes walked
+        // (one up and down is one mem, basically # of 64 bit line accesses
+        // nodes padded with _reserve_ field to pad to 128 bits to match Knuth
+
+        long memAccesses = 0; // each mem access 
+        long inputMemAccesses = 0; // mems to initialize, set in solver
+        long[] profile = new long[1];
+        long nextMemoryDump = -1; // next memory threshold for output, or -1 when eeding set
+        int[] choice = new int[1]; // current choice index
+
+
+        void PrintOption(int p, long costThreshold = Int64.MaxValue)
+        {
+            if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
+            {
+                dl.output.WriteLine($"Illegal option {p}!");
+                return;
+            }
+
+            int k, q, s, j;
+
+            for (q = p, s= 0; ;)
+            {
+                dl.output.Write($" {dl.NAME(dl.TOP(q))}");
+                if (dl.COLOR(q) != 0)
+                {
+                    var color = dl.COLOR(q) > 0 ? dl.COLOR(q) : dl.COLOR(dl.TOP(q));
+                    dl.output.Write($":{color}");
+                }
+
+                s += dl.COST(dl.TOP(q));
+
+                q++;
+                if (dl.TOP(q) <= 0) q = dl.ULINK(q);
+                if (q == p) break;
+            }
+
+            for (q = dl.DLINK(dl.TOP(p)), k = 1; q != p; k++)
+            {
+                if (q == dl.TOP(p))
+                {
+                    dl.output.Write(" (?)");
+                    goto finish;
+                }
+                else
+                    q = dl.DLINK(q);
+            }
+
+            for (q = dl.DLINK(dl.TOP(p)), j = 0; q >= dl.NameNodeCount; q = dl.DLINK(q), j++)
+                if (dl.COST(q)  >= costThreshold) 
+                    break;
+            dl.output.Write($" ({k} of {j})");
+
+            finish: 
+            
+            if (s + dl.COST(p) != 0) 
+                dl.output.Write($" {s+dl.COST(p)} [{dl.COST(p)}]");
+            dl.output.WriteLine();
+
+            // dl.output.WriteLine($" ({k} of {dl.LEN(dl.TOP(p))})");
+        }
+
+        void PrintState(int level, int[] choice)
+        {
+            // based on Exercise #12, as noted on page 73
+
+            dl.output.WriteLine($"Current state (level {level})");
+            for (var l = 0; l < level; l++)
+            {
+                PrintOption(choice[l]);
+                if (l >= dl.Options.ShowLevelMax)
+                {
+                    dl.output.WriteLine(" ...");
+                    break;
+                }
+            }
+
+            dl.output.WriteLine($"{SolutionCount} solutions, {memAccesses} mems, and max level {maxLevelSeen} so far.");
+        }
+
+        void PrintProgress(int level, int[] choice)
+        {
+            // based on Exercise #12, as noted on page 73
+
+            dl.output.Write($" after {memAccesses} mems: {SolutionCount} sols,");
+            double f = 0, fd = 1;
+
+            for (var l = 0; l < level; l++)
+            {
+                var c = dl.TOP(choice[l]);
+                var d = dl.LEN(c);
+
+                int k, p;
+                for (k = 1, p = dl.DLINK(c); p != choice[l]; k++)
+                {
+                    if (k > dl.N)
+                    {
+                        dl.output.WriteLine("ERROR - bad fields in Print Progress!");
+                        break;
+                    }
+                    p = dl.DLINK(p);
+                }
+
+                fd *= d;
+                f += (k - 1) / fd;
+                dl.output.Write($"{Enc(k)}{Enc(d)} ");
+
+                if (l >= dl.Options.ShowLevelMax)
+                {
+                    dl.output.Write("...");
+                    break;
+                }
+            }
+
+            char
+                Enc(int num) => (char)(
+                num switch
+                {
+                    < 10 => '0' + num,
+                    < 36 => 'a' + num - 10,
+                    < 62 => 'A' + num - 36,
+                    _ => '*'
+                }
+            );
+
+            dl.output.WriteLine($" {(f + 0.5 / fd):F5}");
+        }
+
+
+        #endregion
     } // stats class
 
     #endregion
@@ -771,7 +795,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     {
         if (hasMultiplicities)
         {
-            SolveM();
+            SolveM(); // todo - unify all solutions into one solver?
             return;
         }
 
@@ -786,13 +810,13 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             rand = new Random(Options.RandomSeed);
 
         var step = 1; // represent algo step X1 through X8
-        int N = 0, Z = 0, l = 0, i = 0; //, xl = 0;
+        int Z = 0, l = 0, i = 0; //, xl = 0;
 
         // for local work
         int j = 0, p = 0;
 
         // solution
-        var x = new int[optionCount + 1]; // overkill in space
+        var x = new int[Stats.maxAllowedLevel]; // overkill in space
 
         var done = false;
         // this follows Knuth TAOCP notation and format
@@ -801,10 +825,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             switch (step)
             {
                 case 1: // Initialize: load data as above
-                    N = NameNodeCount - 1; // # of items, ignore first spacer
                     Z = lastSpacerIndex;
 
-                    second = N + 1;
 
                     l = 0; // level
                     step = 2;
@@ -965,34 +987,53 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         // if show totals selected
         // print totals of item covers...?
 
+        SanityCheck(); // todo - remove, check on option
+
         Stats.ResetStats(optionCount);
         Stats.StartTimer();
         if (Options.Randomize)
             rand = new Random(Options.RandomSeed);
 
         var step = 1; // represent algo step M1 through M9
-        int N = 0, Z = 0, l = 0, i = 0, N1 = 0;
+        int Z = 0, l = 0, i = 0;
 
         // for local work
         int j = 0, p = 0;
 
         // solution
-        var x = new int[optionCount + 1]; // overkill in space
-        var FT = new int[optionCount + 1]; // "First Tweaks" to track start of pointer chains
+        var x = new int[Stats.maxAllowedLevel]; // overkill in space
+        var FT = new int[Stats.maxAllowedLevel]; // "First Tweaks" to track start of pointer chains
+
+
+        void Chk(int choice)
+        {
+            return; // there is inf loop happening
+            var c = TOP(choice);
+            var d = LEN(c);
+
+            int k, p;
+            for (k = 1, p = DLINK(c); p != choice; k++)
+            {
+                p = DLINK(p);
+                //if (k > 1000000) 
+                //    Console.WriteLine("ERROR");
+            }
+        }
 
         var done = false;
         // this follows Knuth TAOCP notation and format
         while (!done)
         {
+            if (l > 0 && step == 5)
+                Chk(x[l]);
+
+            //Console.WriteLine("Step " + step);
+            //Console.WriteLine($"Step: {step}");
             switch (step)
             {
                 case 1: // Initialize: load data as above
-                    N = NameNodeCount - 1; // # of items, ignore first spacer
                     Z = lastSpacerIndex;
-
-                    N1 = second - 1; // todo - correct? number of primary items
-
-                    second = N + 1;
+                    Trace.Assert(N1 > 0);
 
                     l = 0; // level
                     step = 2;
@@ -1059,21 +1100,22 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     }
 
 
+                    // todo - use MRV of exercise 166 - different than this one!
                     // i is best for MRV, if not MRV, take first
                     if (!Options.MinimumRemainingValuesHeuristic)
                         i = RLINK(0); // choose first for now
 
                     Stats.TrackLevels(2, l, -1, i, tm);
 
-                    // see exercise 166 answer
-                    var ThetaI = monus(LEN(p) + 1, monus(BOUND(p), SLACK(p)));
-                    if (ThetaI == 0) // NOTE: this branch different than X, XCC
+                    // see exercise 166 answer - get branching factor
+                    var θi = Monus(LEN(i) + 1, Monus(BOUND(i), SLACK(i)));
+                    if (θi == 0) // NOTE: this branch different than X, XCC
                         step = 9;
                     else
                         step = 4;
-                    int monus(int a, int b) => Int32.Max(a - b, 0);
+                    int Monus(int a, int b) => Int32.Max(a - b, 0);
                     break;
-                case 4: // prepare to branch on i, possibly cover item i using (50) from TAOCP
+                case 4: // prepare to branch on i
                     x[l] = DLINK(i);
                     BOUND(i, BOUND(i) - 1); // BOUND checks for M
                     if (BOUND(i) == 0) //
@@ -1084,6 +1126,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     break;
                 case 5: // possibly tweak x[l]
                     // New Step in MCC
+                    step = 6; // default
                     if (BOUND(i) == 0 && SLACK(i) == 0)
                     {
                         if (x[l] != i) step = 6;
@@ -1110,6 +1153,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
                     break;
                 case 6: // Try xl 
+                    step = 7; // default
                     if (x[l] != i)
                     {
                         Stats.TrackChoices(l, x[l]);
@@ -1135,33 +1179,36 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                             }
                         }
 
-                        l = l + 1;
-                        done |= Stats.TrackLevels(l);
-                        if (done) break;
-
-                        step = 2;
                     }
+                    l = l + 1;
+                    done |= Stats.TrackLevels(l);
+                    if (done) break;
+
+                    step = 2;
 
                     break;
                 case 7: // Try again
-                    p = x[l] - 1;
-                    while (p != x[l])
+                    if (x[l] != i)
                     {
-                        j = TOP(p);
-                        if (j <= 0)
-                            p = DLINK(p);
-                        else if (j <= N1)
+                        p = x[l] - 1;
+                        while (p != x[l])
                         {
-                            BOUND(j, BOUND(j) + 1);
-                            p = p - 1;
-                            if (BOUND(j) == 1)
-                                UncoverP(j);
-                        }
-                        else
-                        {
-                            Uncommit(p, j);
-                            //Uncover(j);
-                            p = p - 1;
+                            j = TOP(p);
+                            if (j <= 0)
+                                p = DLINK(p);
+                            else if (j <= N1)
+                            {
+                                BOUND(j, BOUND(j) + 1);
+                                p = p - 1;
+                                if (BOUND(j) == 1)
+                                    UncoverP(j);
+                            }
+                            else
+                            {
+                                Uncommit(p, j);
+                                //Uncover(j);
+                                p = p - 1;
+                            }
                         }
                     }
 
@@ -1177,9 +1224,9 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     else
                     {
                         if (BOUND(i) == 0)
-                            UntweakP(l, FT, N);
+                            UntweakP(l, FT);
                         else
-                            Untweak(l, FT, N);
+                            Untweak(l, FT);
                     }
 
                     //Uncover(i);
@@ -1241,7 +1288,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         LEN(p, LEN(p) - 1);
     }
 
-    void Untweak(int l, IList<int> FT, int N)
+    void Untweak(int l, IList<int> FT)
     {
         var a = FT[l];
         var p = (a <= N ? a : TOP(a));
@@ -1263,7 +1310,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         LEN(p, LEN(p) + k);
     }
 
-    void UntweakP(int l, IList<int> FT, int N)
+    void UntweakP(int l, IList<int> FT)
     {
         var a = FT[l];
         var p = (a <= N ? a : TOP(a));
@@ -1372,8 +1419,6 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     }
 
-
-    // helpers
     void Cover(int i)
     {
         var p = DLINK(i); // MUST BE LOCAL P
@@ -1534,7 +1579,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         if (output == null)
             return; // nothing to do
         var os = output;
-        os.WriteLine($"Solution {Stats.SolutionCount} (found after {Stats.Updates} deque removals):");
+        os.WriteLine($"Solution {SolutionCount} (found after {Stats.Updates} deque removals):");
         foreach (var line in solutionNodes)
         {
             foreach (var s in line)
@@ -1668,7 +1713,44 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         }
     }
 
+    bool SanityCheck()
+    {
+        int k, p, q, pp, qq, t;
+        var root = 0;
+        bool ok = true; 
+        for (q = root, p = RLINK(q); ; q = p, p = RLINK(p))
+        {
+            if (LLINK(p) != q)
+                Error($"Bad left link at item {NAME(p)}");
+
+            if (p == root) 
+                break;
+
+            for (qq = p, pp = DLINK(qq), k = 0; ; qq = pp, pp = DLINK(pp), k++)
+            {
+                if (ULINK(pp) != qq)
+                    Error($"Bad up link at node {pp}");
+                if (pp == p) break;
+                if (TOP(pp) != p)
+                    Error($"Bad TOP at node {pp}");
+                if (qq > p && COST(pp) < COST(qq))
+                    Error($"Costs out of order at node {pp}");
+            }
+
+            if (p < N1 && LEN(p) != k)
+                Error($"Bad length in item {NAME(p)}");
+        }
+
+        return ok;
+        void Error(string s)
+        {
+            ok = false;
+            output.WriteLine(s);
+        }
+    }
+
     #region underlying data structure
+
 
     int NameNodeCount => nameNodes.Count;
 
@@ -1772,6 +1854,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         nodes[x].SetC(val);
     }
 
+    int COST(int x) => 0; // for now
+
     void ClearData()
     {
         Names.Clear();
@@ -1781,14 +1865,15 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         optionCount = 0;
         spacerIndex = 0;
         lastSpacerIndex = 0;
-        second = -1;
+        N2 = 0; 
         hasColor = false;
         hasMultiplicities = false;
         slack.Clear();
         bound.Clear();
-    }
 
-    int COLOR(int x)
+}
+
+int COLOR(int x)
     {
         Stats.Mem();
         return nodes[x].datum;
@@ -1814,8 +1899,11 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     // state
     int optionCount = 0; // count of options
 
-    int
-        second = -1; // index of first of the secondary items, -1 when none set, or one past node count during run of algo
+    // throughout, N = total items, N1 = primary items, N2 = secondary items
+    int N => NameNodeCount - 1; // -1 for spacer address
+    int N1 => N - N2; // primary item count
+    int N2 = 0;       // 
+
 
     TextWriter output;
     int spacerIndex = 0; // decrement to fill in TOP
