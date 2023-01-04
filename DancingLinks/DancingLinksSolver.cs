@@ -72,6 +72,8 @@ public class DancingLinksSolver
     - error if color assigned to non-secondary item
     - output for bound and slack
     - some sanity checking to ensure structure is valid, useful for debugging, extending
+    - extend cost C$ and X$ algos to an M$ algo, send to Knuth
+    - better M3 step choices - see book and exercises for ideas
 
     items strings, spaced out, '|' splits primary from secondary
     - 
@@ -120,6 +122,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     public DancingLinksSolver()
     {
+        formatter = new Formatter(this);
         Stats = new LogStats(this);
         Clear();
         output = TextWriter.Null;
@@ -133,9 +136,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         ClearData();
 
         Stats.ResetStats(1);
-
-        lineEnd = "";
-        solutionEnd = "";
+        formatter.Reset();
 
         // initial spacer items
         AddSpacer(true); // regular nodes all 0s
@@ -304,6 +305,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     #region Options Input
 
+    public void ParseOption(string option) => AddOption(option.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
     public void AddOption(params string[] names) => AddOption((IEnumerable<string>)names);
 
     public void AddOptions(IEnumerable<IList<string>> items)
@@ -337,11 +340,15 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 name = w[0];
             }
 
-            if (name.Contains('$')) throw new NotImplementedException("Option costs not implemented");
-
+            if (name.Contains('$'))
+            {
+                //todo.
+                // lots to do to make it work
+                throw new NotImplementedException("Option costs not implemented");
+                //name = ;
+            }
 
             var i = NameIndex(name);
-
 
             var x = AddNode(true); // node index
 
@@ -493,8 +500,10 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Basics))
             {
                 nextMemoryDump += dl.Options.MemsDumpStepSize;
-                if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.FullState)) PrintState(level, x);
-                else PrintProgress(level, x);
+                if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.FullState)) 
+                    dl.formatter.PrintState(level, x);
+                else
+                    dl.formatter.PrintProgress(level, x);
             }
 
             if (memAccesses >= dl.Options.MemsStopThreshold)
@@ -544,7 +553,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             {
                 dl.output.WriteLine($"{SolutionCount}:");
                 for (var k = 0; k < l; k++)
-                    PrintOption(choice[k]);
+                    dl.formatter.PrintOption(choice[k]);
                 dl.output.Flush();
             }
 
@@ -584,7 +593,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Choices) && l < dl.Options.ShowChoicesMax)
             {
                 dl.output.Write($"L{l}:");
-                PrintOption(xl);
+                dl.formatter.PrintOption(xl);
             }
         }
 
@@ -635,45 +644,106 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         #region Implementation
 
         DancingLinksSolver dl;
-        int maxLevelSeen = 0; // max level seen while searching
+        public int maxLevelSeen = 0; // max level seen while searching
         int maxDegree = 0;
 
         long nodeCount = 0; // nodes walked
         // (one up and down is one mem, basically # of 64 bit line accesses
         // nodes padded with _reserve_ field to pad to 128 bits to match Knuth
 
-        long memAccesses = 0; // each mem access 
+        public long memAccesses = 0; // each mem access 
         long inputMemAccesses = 0; // mems to initialize, set in solver
         long[] profile = new long[1];
         long nextMemoryDump = -1; // next memory threshold for output, or -1 when eeding set
         int[] choice = new int[1]; // current choice index
 
 
-        void PrintOption(int p, long costThreshold = Int64.MaxValue)
+
+        #endregion
+    } // stats class
+
+    #endregion
+
+    class Formatter
+    {
+        DancingLinksSolver dl;
+        
+        public Formatter(DancingLinksSolver dl) => this.dl = dl;
+
+        long ItemCost(int p)
+        {
+            if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
+            {
+                dl.output.WriteLine($"Illegal option {p}!");
+                return 0;
+            }
+
+            var q = p;
+            var cost = 0L;
+            while (true)
+            {
+                cost += dl.COST(dl.TOP(q));
+                q++;
+                if (dl.TOP(q) <= 0) q = dl.ULINK(q);
+                if (q == p) break;
+            }
+
+            return cost;
+        }
+
+        public IEnumerable<string> GetOptionItems(int p, bool normalizeOrder)
+        {
+            //todo
+            if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
+            {
+                dl.output.WriteLine($"Illegal option {p}!");
+                yield break;
+            }
+
+            var q = p;
+            if (normalizeOrder)
+            {
+                // wrap q to start to normalize item order
+                while (true)
+                {
+                    q++;
+                    if (dl.TOP(q) <= 0)
+                    {
+                        q = dl.ULINK(q);
+                        break;
+                    }
+                }
+            }
+
+            p = q; // set this as end point
+            while (true)
+            {
+                var name = dl.NAME(dl.TOP(q));
+                if (dl.hasColor && dl.COLOR(q) != 0)
+                {
+                    var color = dl.Colors[dl.COLOR(q) > 0 ? dl.COLOR(q) : dl.COLOR(dl.TOP(q))];
+                    name += $":{color}";
+                }
+                yield return name;
+
+                q++;
+                if (dl.TOP(q) <= 0) q = dl.ULINK(q);
+                if (q == p) break;
+            }
+        }
+
+        public void PrintOption(int p, long costThreshold = Int64.MaxValue)
         {
             if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
             {
                 dl.output.WriteLine($"Illegal option {p}!");
                 return;
             }
+            foreach (var itemText in GetOptionItems(p, normalizeOrder: false))
+                dl.output.WriteLine(itemText);
+            var s = ItemCost(p);
 
-            int k, q, s, j;
-
-            for (q = p, s= 0; ;)
-            {
-                dl.output.Write($" {dl.NAME(dl.TOP(q))}");
-                if (dl.COLOR(q) != 0)
-                {
-                    var color = dl.COLOR(q) > 0 ? dl.COLOR(q) : dl.COLOR(dl.TOP(q));
-                    dl.output.Write($":{color}");
-                }
-
-                s += dl.COST(dl.TOP(q));
-
-                q++;
-                if (dl.TOP(q) <= 0) q = dl.ULINK(q);
-                if (q == p) break;
-            }
+            int k, j, q;
 
             for (q = dl.DLINK(dl.TOP(p)), k = 1; q != p; k++)
             {
@@ -687,20 +757,18 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             }
 
             for (q = dl.DLINK(dl.TOP(p)), j = 0; q >= dl.NameNodeCount; q = dl.DLINK(q), j++)
-                if (dl.COST(q)  >= costThreshold) 
+                if (dl.COST(q) >= costThreshold)
                     break;
             dl.output.Write($" ({k} of {j})");
 
-            finish: 
-            
-            if (s + dl.COST(p) != 0) 
-                dl.output.Write($" {s+dl.COST(p)} [{dl.COST(p)}]");
-            dl.output.WriteLine();
+        finish:
 
-            // dl.output.WriteLine($" ({k} of {dl.LEN(dl.TOP(p))})");
+            if (s + dl.COST(p) != 0)
+                dl.output.Write($" {s + dl.COST(p)} [{dl.COST(p)}]");
+            dl.output.WriteLine();
         }
 
-        void PrintState(int level, int[] choice)
+        public void PrintState(int level, int[] choice)
         {
             // based on Exercise #12, as noted on page 73
 
@@ -715,14 +783,14 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 }
             }
 
-            dl.output.WriteLine($"{SolutionCount} solutions, {memAccesses} mems, and max level {maxLevelSeen} so far.");
+            dl.output.WriteLine($"{dl.SolutionCount} solutions, {dl.Stats.memAccesses} mems, and max level {dl.Stats.maxLevelSeen} so far.");
         }
 
-        void PrintProgress(int level, int[] choice)
+        public void PrintProgress(int level, int[] choice)
         {
             // based on Exercise #12, as noted on page 73
 
-            dl.output.Write($" after {memAccesses} mems: {SolutionCount} sols,");
+            dl.output.Write($" after {dl.Stats.memAccesses} mems: {dl.SolutionCount} sols,");
             double f = 0, fd = 1;
 
             for (var l = 0; l < level; l++)
@@ -766,11 +834,36 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             dl.output.WriteLine($" {(f + 0.5 / fd):F5}");
         }
 
+        /// <summary>
+        /// Write out a solution to the current output
+        /// </summary>
+        public void PrintSolution(IEnumerable<List<string>> solutionNodes)
+        {
+            var os = dl.output;
+            os.WriteLine($"Solution {dl.SolutionCount} (found after {dl.Stats.Updates} deque removals):");
+            foreach (var line in solutionNodes)
+            {
+                foreach (var s in line)
+                    os.Write($"{s} ");
+                os.WriteLine(lineEnd);
+            }
 
-        #endregion
-    } // stats class
+            os.WriteLine(solutionEnd);
+        }
 
-    #endregion
+        // set from outside, useful for separating for parsers
+        public string lineEnd = "";
+        public string solutionEnd = "";
+
+      
+        public void Reset()
+        {
+            lineEnd = "";
+            solutionEnd = "";
+        }
+    }
+
+    private Formatter formatter;
 
     /// <summary>
     /// Set where the output text goes
@@ -783,8 +876,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     {
         // todo - merge into options?
         output = outputWriter;
-        lineEnd = newLineEnd;
-        solutionEnd = newSolutionEnd;
+        formatter.lineEnd = newLineEnd;
+        formatter.solutionEnd = newSolutionEnd;
     }
 
     /// <summary>
@@ -794,7 +887,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     public void Solve()
     {
         if (hasMultiplicities)
-        {
+        { // can make all use SolveM if bounds added for each item.
             SolveM(); // todo - unify all solutions into one solver?
             return;
         }
@@ -898,8 +991,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     step = 4;
                     break;
                 case 4: // Cover item i using (12) from TAOCP
-                    CoverQ(i);
-                    //Cover(i);
+                    Cover(i, hasColor);
                     x[l] = DLINK(i);
                     step = 5;
                     break;
@@ -942,7 +1034,6 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                         else
                         {
                             UncommitQ(p, j);
-                            //Uncover(j);
                             p = p - 1;
                         }
                     }
@@ -952,8 +1043,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     step = 5;
                     break;
                 case 7: // Backtrack
-                    UncoverQ(i);
-                    //Uncover(i);
+                    Uncover(i, hasColor);
                     step = 8;
                     break;
                 case 8: // leave level l
@@ -1119,7 +1209,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     x[l] = DLINK(i);
                     BOUND(i, BOUND(i) - 1); // BOUND checks for M
                     if (BOUND(i) == 0) //
-                        CoverP(i);
+                        Cover(i,true);
                     if (BOUND(i) != 0 || SLACK(i) != 0)
                         FT[l] = x[l];
                     step = 5;
@@ -1138,8 +1228,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     }
                     else if (x[l] != i)
                     {
-                        if (BOUND(i) == 0) TweakP(x[l], i);
-                        else Tweak(x[l], i);
+                        Tweak(x[l], i, BOUND(i) == 0);
                         step = 6;
                     }
                     else if (BOUND(i) != 0)
@@ -1169,7 +1258,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                                 BOUND(j, BOUND(j) - 1);
                                 p = p + 1;
                                 if (BOUND(j) == 0)
-                                    CoverP(j);
+                                    Cover(j, true);
                             }
                             else
                             {
@@ -1201,12 +1290,11 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                                 BOUND(j, BOUND(j) + 1);
                                 p = p - 1;
                                 if (BOUND(j) == 1)
-                                    UncoverP(j);
+                                    Uncover(j, true);
                             }
                             else
                             {
                                 Uncommit(p, j);
-                                //Uncover(j);
                                 p = p - 1;
                             }
                         }
@@ -1219,17 +1307,16 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 case 8: // Restore i
                     if (BOUND(i) == 0 && SLACK(i) == 0)
                     {
-                        UncoverP(i); // using 52
+                        Uncover(i, true); // using 52
                     }
                     else
                     {
                         if (BOUND(i) == 0)
-                            UntweakP(l, FT);
+                            Untweak(l, FT, true);
                         else
-                            Untweak(l, FT);
+                            Untweak(l, FT, false);
                     }
 
-                    //Uncover(i);
                     BOUND(i, BOUND(i) + 1);
                     step = 9;
                     break;
@@ -1270,25 +1357,17 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     #region Hide, Cover, Purify, Tweak, etc.
 
-    void Tweak(int x, int p)
+    void Tweak(int x, int p, bool primed)
     {
-        HideP(x);
+        if (!primed)
+            Hide(x,true);
         var d = DLINK(x);
         DLINK(p, d);
         ULINK(d, p);
         LEN(p, LEN(p) - 1);
     }
 
-    void TweakP(int x, int p)
-    {
-        // HideP(x);
-        var d = DLINK(x);
-        DLINK(p, d);
-        ULINK(d, p);
-        LEN(p, LEN(p) - 1);
-    }
-
-    void Untweak(int l, IList<int> FT)
+    void Untweak(int l, IList<int> FT, bool primed)
     {
         var a = FT[l];
         var p = (a <= N ? a : TOP(a));
@@ -1301,57 +1380,29 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         {
             ULINK(x, y);
             k = k + 1;
-            UnhideP(x);
+            if (!primed)
+                Unhide(x,true);
             y = x;
             x = DLINK(x);
         }
 
         ULINK(z, y);
         LEN(p, LEN(p) + k);
-    }
-
-    void UntweakP(int l, IList<int> FT)
-    {
-        var a = FT[l];
-        var p = (a <= N ? a : TOP(a));
-        var x = a;
-        var y = p;
-        var z = DLINK(p);
-        DLINK(p, x);
-        var k = 0;
-        while (x != z)
-        {
-            ULINK(x, y);
-            k = k + 1;
-            //UnhideP(x);
-            y = x;
-            x = DLINK(x);
-        }
-
-        ULINK(z, y);
-        LEN(p, LEN(p) + k);
-        UncoverP(p);
-    }
-
-    void CoverQ(int i)
-    {
-        if (!hasColor)
-            Cover(i); // AlgorithmX
-        else
-            CoverP(i); // AlgorithmX XCC
+        if (primed)
+            Uncover(p, true);
     }
 
     void CommitQ(int p, int j)
     {
         if (!hasColor)
-            Cover(j); // AlgorithmX
+            Cover(j,false); // AlgorithmX
         else
             Commit(p, j);
     }
 
     void Commit(int p, int j)
     {
-        if (COLOR(p) == 0) CoverP(j);
+        if (COLOR(p) == 0) Cover(j, true);
         if (COLOR(p) > 0) Purify(p);
     }
 
@@ -1364,14 +1415,9 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         while (q != i)
         {
             if (COLOR(q) == c)
-            {
                 COLOR(q, -1);
-            }
             else
-            {
-                HideP(q);
-            }
-
+                Hide(q, true);
             q = DLINK(q);
         }
     }
@@ -1379,14 +1425,14 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     void UncommitQ(int p, int j)
     {
         if (!hasColor)
-            Uncover(j); // AlgorithmX
+            Uncover(j, false); // AlgorithmX
         else
             Uncommit(p, j);
     }
 
     void Uncommit(int p, int j)
     {
-        if (COLOR(p) == 0) UncoverP(j);
+        if (COLOR(p) == 0) Uncover(j, true);
         if (COLOR(p) > 0) Unpurify(p);
     }
 
@@ -1398,34 +1444,20 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         while (q != i)
         {
             if (COLOR(q) < 0)
-            {
                 COLOR(q, c);
-            }
             else
-            {
-                UnhideP(q);
-            }
-
+                Unhide(q,true);
             q = ULINK(q);
         }
     }
 
-    void UncoverQ(int i)
-    {
-        if (!hasColor)
-            Uncover(i); // AlgorithmX
-        else
-            UncoverP(i); // AlgorithmX
-
-    }
-
-    void Cover(int i)
+    void Cover(int i, bool primed)
     {
         var p = DLINK(i); // MUST BE LOCAL P
         Stats.Update();
         while (p != i)
         {
-            Hide(p);
+            Hide(p,primed);
             p = DLINK(p);
         }
 
@@ -1435,23 +1467,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         LLINK(r, l);
     }
 
-    void CoverP(int i)
-    {
-        var p = DLINK(i); // MUST BE LOCAL P
-        Stats.Update();
-        while (p != i)
-        {
-            HideP(p);
-            p = DLINK(p);
-        }
-
-        var l = LLINK(i);
-        var r = RLINK(i);
-        RLINK(l, r);
-        LLINK(r, l);
-    }
-
-    void HideP(int p)
+    void Hide(int p, bool primed)
     {
         var q = p + 1;
         while (q != p)
@@ -1463,7 +1479,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 q = u; // q was a spacer
             else
             {
-                if (COLOR(q) >= 0)
+                if (COLOR(q) >= 0 || !primed)
                 {
                     DLINK(u, d);
                     ULINK(d, u);
@@ -1476,28 +1492,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         }
     }
 
-    void Hide(int p)
-    {
-        var q = p + 1;
-        while (q != p)
-        {
-            var x = TOP(q);
-            var u = ULINK(q);
-            var d = DLINK(q);
-            if (x <= 0)
-                q = u; // q was a spacer
-            else
-            {
-                DLINK(u, d);
-                ULINK(d, u);
-                LEN(x, LEN(x) - 1);
-                q = q + 1;
-                Stats.Update();
-            }
-        }
-    }
-
-    void UncoverP(int i)
+    void Uncover(int i, bool primed)
     {
         var l = LLINK(i);
         var r = RLINK(i);
@@ -1506,26 +1501,12 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         var p = ULINK(i);
         while (p != i)
         {
-            UnhideP(p);
+            Unhide(p, primed);
             p = ULINK(p);
         }
     }
 
-    void Uncover(int i)
-    {
-        var l = LLINK(i);
-        var r = RLINK(i);
-        RLINK(l, i);
-        LLINK(r, i);
-        var p = ULINK(i);
-        while (p != i)
-        {
-            Unhide(p);
-            p = ULINK(p);
-        }
-    }
-
-    void Unhide(int p)
+    void Unhide(int p, bool primed)
     {
         var q = p - 1;
         while (q != p)
@@ -1537,27 +1518,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                 q = d; // q was a spacer
             else
             {
-                DLINK(u, q);
-                ULINK(d, q);
-                LEN(x, LEN(x) + 1);
-                q = q - 1;
-            }
-        }
-    }
-
-    void UnhideP(int p)
-    {
-        var q = p - 1;
-        while (q != p)
-        {
-            var x = TOP(q);
-            var u = ULINK(q);
-            var d = DLINK(q);
-            if (x <= 0)
-                q = d; // q was a spacer
-            else
-            {
-                if (COLOR(q) >= 0)
+                if (COLOR(q) >= 0 || !primed)
                 {
                     DLINK(u, q);
                     ULINK(d, q);
@@ -1572,65 +1533,6 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     #endregion
 
     /// <summary>
-    /// Write out a solution to the current output
-    /// </summary>
-    void PrintSolution(IEnumerable<List<string>> solutionNodes)
-    {
-        if (output == null)
-            return; // nothing to do
-        var os = output;
-        os.WriteLine($"Solution {SolutionCount} (found after {Stats.Updates} deque removals):");
-        foreach (var line in solutionNodes)
-        {
-            foreach (var s in line)
-                os.Write($"{s} ");
-            os.WriteLine(lineEnd);
-        }
-
-        os.WriteLine(solutionEnd);
-    }
-
-    // set from outside, useful for separating for parsers
-    string lineEnd = "";
-    string solutionEnd = "";
-
-    List<string> GetOptionItems(int p)
-    {
-        var items = new List<string>();
-        if (p < NameNodeCount || p >= NodeCount || TOP(p) <= 0)
-        {
-            output.WriteLine($"Illegal option {p}!");
-            return items;
-        }
-
-        var q = p;
-        // wrap q to start to normalize item order
-        while (true)
-        {
-            q++;
-            if (TOP(q) <= 0)
-            {
-                q = ULINK(q);
-                break;
-            }
-        }
-
-        p = q; // set this as end point
-
-
-        for (;;)
-        {
-            var name = NAME(TOP(q));
-            items.Add(name);
-            q++;
-            if (TOP(q) <= 0) q = ULINK(q);
-            if (q == p) break;
-        }
-
-        return items;
-    }
-
-    /// <summary>
     /// Get solution described as a list of options, each option given as a list of items
     /// todo - get nicer method?
     /// </summary>
@@ -1641,12 +1543,10 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     {
         var ans = new List<List<string>>();
         for (var i = 0; i < l; ++i)
-            ans.Add(GetOptionItems(x[i]));
+            ans.Add(formatter.GetOptionItems(x[i],normalizeOrder:true).ToList());
         return ans;
     }
 
-    // process a solution
-    // Return true to continue enumeration, or false to stop
     /// <summary>
     /// Record a solution, by sending it to the current text output if asked, 
     /// and to any listeners if present
@@ -1664,14 +1564,14 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         if (solutionEventHandler == null && !printSoln)
             return true; // nothing else to do
 
-        var soln = GetSolution(x, l);
+        var solutionOptions = GetSolution(x, l);
 
-        var retval = true;
-        if (solutionEventHandler != null)
-            retval = solutionEventHandler(Stats.SolutionCount, Stats.Updates, soln);
         if (printSoln)
-            PrintSolution(soln);
-        return retval;
+            formatter.PrintSolution(solutionOptions);
+
+        return solutionEventHandler == null
+            ? true
+            : solutionEventHandler(Stats.SolutionCount, Stats.Updates, solutionOptions);
     }
 
     Random? rand = null;
@@ -1854,7 +1754,23 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         nodes[x].SetC(val);
     }
 
-    int COST(int x) => 0; // for now
+    #region COSTS - todo - finish impl
+    bool hasCost = false;
+
+    long COST(int x) => 0; // for now
+    private List<long> costs = new(); // one per node
+    void COST(int x, long val)
+    {
+        //todo;
+    }
+    
+    // max heap in array, 1 indexed as in knuth
+    // K items
+    // thus best(j/2) >= best(j), 1<=j<=K
+    private List<long> best = new();
+    private int K = 0;
+
+    #endregion
 
     void ClearData()
     {
@@ -1871,7 +1787,12 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         slack.Clear();
         bound.Clear();
 
-}
+        // set best to K items of value max int
+        hasCost = false;
+        costs.Clear();
+        best.Clear();
+        K = 0;
+    }
 
 int COLOR(int x)
     {

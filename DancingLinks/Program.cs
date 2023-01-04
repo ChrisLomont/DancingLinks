@@ -7,22 +7,33 @@ Console.WriteLine("Dancing links testing and experiments");
 // all reuse this - allows nicer control of settings
 var dl = new DancingLinksSolver();
 
+
 // todo - get toy dlx, toy secondary, toy colors, toy mult, toy mult with colors, etc. to quickly catch errors
 // test toy problems
-Test(1, () => ToyDlxPage68());
-Test(1, () => ToyColorPage89(dump: false));
-Test(92, () => NQueens(8, useSecondary: true));
-Test(1, ()=>ToyMultiplicity());
-Test(1, () => ToyMultiplicityWithColor());
+//Test(1, () => ToyDlxPage68());
+//Test(1, () => ToyColorPage89(dump: false));
+//Test(92, () => NQueens(8, useSecondary: true));
+//Test(1, ()=>ToyMultiplicity());
+//Test(1, () => ToyMultiplicityWithColor());
+//Test(64, Exercise94); // tests colors
+
 
 // some options
 dl.SetOutput(Console.Out);
-//dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
-//dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
-//dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+// dl.Options.MinimumRemainingValuesHeuristic = false;
+dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
+// dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
+// dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+//dl.Options.MemsDumpStepSize = 1;
 //dl.Options.MemsDumpStepSize = 100_000;
+//dl.Options.MemsDumpStepSize = 1_000_000;
 //dl.Options.MemsDumpStepSize = 10_000_000;
-//dl.Options.MinimumRemainingValuesHeuristic = false;
+//dl.Options.MemsDumpStepSize = 100_000_000;
+dl.Options.MemsDumpStepSize = 1_000_000_000;
+
+ToyColorPage89(true);
+
+//WordP94(true);
 
 // should have solutions for n = 8
 //WainwrightPackingPage92(8); // long, needs tested
@@ -34,6 +45,20 @@ dl.SetOutput(Console.Out);
 //}
 
 
+//NQueenCover(1, 1); // 1 soln
+//NQueenCover(1, 2); // 4 solns
+//NQueenCover(1, 3); // 1 soln
+//NQueenCover(1, 4); // 0 soln
+//NQueenCover(2, 4); // 12 solns
+//NQueenCover(3, 4); // 320 solns
+//NQueenCover(4, 4); // 1636 solns
+//NQueenCover(2, 5); // 0 solns
+//NQueenCover(3, 5); // 186 solns
+//NQueenCover(2, 6); // 0 solns
+//NQueenCover(3, 6); // 4 solns
+//NQueenCover(3, 7); // 0 solns
+//NQueenCover(4, 7); // 86 solns
+//NQueenCover(3, 8); // 0 solns - todo - lots of print errors - figure out and fix, set memstep to 1 to see immediately
 // requires 5 queens to attack all squares
 //NQueenCover(1, 8);
 //NQueenCover(2, 8);
@@ -41,81 +66,13 @@ dl.SetOutput(Console.Out);
 //NQueenCover(4, 8);
 // NQueenCover(5, 8); // 4680 solns, 15 gigamems - TODO  -hits printing bug on progress - fgure out?
 
+// NQueenCover(5, 8, true); // 284 solns (36 w/o symmetries?)
+
+//WordCube(4);
 
 return;
 
 //ToyMultiplicityWithColor();
-
-long NQueenCover(int m, int n)
-{ // how many queens to cover nxn, uses multiplicities
-    dl.Clear();
-    for (var i = 0; i < n; ++i)
-    for (var j = 0; j < n; ++j)
-        dl.AddItem(Cell(i,j), lowerBound:1, upperBound:m);
-    dl.AddItem("#",lowerBound:m, upperBound:m); // number tag
-
-    for (var i = 0; i < n; ++i)
-    for (var j = 0; j < n; ++j)
-    {
-        var opt = $"# {Cell(i,j)} "; // start pos
-        // attacked squares
-        for (var di = -1; di <= 1; ++di)
-        for (var dj = -1; dj <= 1; ++dj)
-        {
-            if (di == 0 && dj == 0) continue;
-            var (x, y) = (i + di, j + dj);
-            while (0 <= x && 0 <= y && x < n && y < n)
-            {
-                opt += Cell(x, y) + " ";
-                x += di;
-                y += dj;
-            }
-        }
-
-        dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-    }
-
-    string Cell(int i, int j) => $"c_{i}_{j}";
-
-
-            dl.Solve();
-    return dl.SolutionCount;
-}
-
-long WainwrightPackingPage92(int n)
-{
-    //n = 2;
-    dl.Clear();
-    // N=(1+2+..+n)^2=1^3+2^3+...+n^3
-    var N = n * (n + 1) / 2; // 1+2+3..+n
-    for (var i = 0; i < N; ++i)
-    for (var j = 0; j < N; ++j)
-        dl.AddItem($"c_{i}_{j}"); // cell i,j
-    for (var k = 1; k <= n; ++k)
-        dl.AddItem($"k_{k}", lowerBound:k, upperBound:k); // cover each of these k times
-
-
-    for (var k = 1; k <= n; ++k)
-    {
-        for (var i = 0; i <= N - k; ++i)
-        for (var j = 0; j <= N - k; ++j)
-        {
-            var opt = $"k_{k} ";
-            for (var di = 0; di < k; ++di)
-            for (var dj = 0; dj < k; ++dj)
-                opt += $"c_{i+di}_{j+dj} ";
-           // Console.WriteLine(opt);
-            dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        }
-    }
-
-    dl.Solve();
-    return dl.SolutionCount;
-
-}
-
-return;
-//Test(64,Exercise94); // tests colors
 //return;
 
 // tests - nothing super long to check
@@ -126,7 +83,7 @@ return;
 
 //return;
 
-//WordCube(4);
+WordCube(4);
 //Page68(dumpState: false);
 //Dudney(); // 16146, ERROR - we do not match
 ToyColorPage89(false);
@@ -217,6 +174,189 @@ Trace.Assert(LangfordPairs(3, false)==2);
 //Trace.Assert(LangfordPairs(16,true,1_000_000) == 326_721_800);
 #endif
 
+List<string> GetWords(string filename, int len, bool toUppercase = false, bool toLower = false, bool allLetters = true, int count = -1)
+{
+    var words = File.ReadAllLines(@"..\..\..\" + filename).ToList();
+    words = words.Where(w => w.Length == len).ToList();
+    if (allLetters)
+        words = words.Where(AllAlpha).ToList();
+    if (toUppercase)
+        words = words.Select(w=>w.ToUpper()).ToList();
+    if (count > 0)
+        words = words.Take(count).ToList();
+    return words;
+
+    bool AllAlpha(string s) => s.ToCharArray().All(Char.IsLetter);
+}
+
+
+long WordP94(bool showSolutions)
+{ 
+    // colors and multiplicity
+    // 4x5 word rectangles from top 1000 words in WORDS(1000);
+    // at most 8 letters
+    // Knuth finds 8 such answers, but not sure if our 4 word list is same as his
+
+    dl.Clear();
+    for (var i =0; i < 4; ++i)
+        dl.AddItem($"A{i}");
+    for (var i = 0; i < 5; ++i)
+        dl.AddItem($"D{i}");
+    for (var i =0; i < 26; ++i)
+        dl.AddItem($"#{(char)(i+'A')}");
+    dl.AddItem("#",lowerBound:8, upperBound:8);
+
+    for (var i = 0; i < 26; ++i)
+        dl.AddItem($"{(char)(i+'A')}", secondary:true);
+    for (var i = 0 ; i < 4; ++i)
+    for (var j = 0; j < 5; ++j)
+        dl.AddItem($"{i}_{j}", secondary: true);
+
+    // letter counting by these 2*26 options
+    for (var i = 0; i < 26; ++i)
+    {
+        var c = (char)('A' + i);
+        dl.ParseOption($"#{c} {c}:0");
+        dl.ParseOption($"#{c} {c}:1 #");
+    }
+
+    // now add words
+    var (num4,num5) = (1000,2000);
+    var len4 = GetWords("most_common_words.txt", 4, toUppercase: true, count:num4);
+    var len5 = GetWords("sgb_words.txt",5, toUppercase:true, count:num5);
+
+    Func(dl, len5, 4, 'A', (i, j) => $"{i}_{j}");
+    Func(dl, len4, 5, 'D', (i, j) => $"{j}_{i}");
+
+    static void Func(DancingLinksSolver dl, IList<string> words, int wid, char dir, Func<int,int,string> toCell)
+    {
+        foreach (var word in words)
+        {
+            var letters = new int[26];
+            foreach (var w in word)
+                letters[w - 'A']++;
+            for (var i = 0; i < wid; ++i)
+            {
+                var opt = $"{dir}{i} ";
+                var j = 0;
+                foreach (var c in word)
+                    opt += $"{toCell(i, j++)}:{c} ";
+
+                j = 0;
+                for (var k = 0; k < 26; ++k)
+                {
+                    if (letters[k] != 0)
+                    {
+                        var c = (char) (k + 'A');
+                        opt += $"{c}:1 ";
+                        ++j;
+                    }
+                }
+                dl.ParseOption(opt);
+            }
+        }
+    }
+
+
+    if (showSolutions)
+        dl.SolutionListener += Dump;
+
+    dl.Solve();
+
+    if (showSolutions)
+        dl.SolutionListener -= Dump;
+
+    bool Dump(long solutionNumber,
+        long dequeueNumber,
+        List<List<string>> solution
+    )
+    {
+        Console.WriteLine($"Solution {solutionNumber} :");
+        foreach (var option in solution)
+        {
+            Console.Write("   ");
+            foreach (var item in option)
+                Console.Write($"{item} ");
+
+            Console.WriteLine();
+        }
+
+        return true;
+    }
+
+    return dl.SolutionCount;
+}
+
+long NQueenCover(int m, int n, bool noEdge = false)
+{ // how many queens to cover nxn, uses multiplicities
+    dl.Clear();
+    for (var i = 0; i < n; ++i)
+    for (var j = 0; j < n; ++j)
+        dl.AddItem(Cell(i, j), lowerBound: 1, upperBound: m);
+    dl.AddItem("#", lowerBound: m, upperBound: m); // number tag
+
+    for (var i = 0; i < n; ++i)
+    for (var j = 0; j < n; ++j)
+    {
+        if (noEdge && (i ==0 || j == 0 || i == n-1 || j == n-1)) continue;
+        var opt = $"# {Cell(i, j)} "; // start pos
+        // attacked squares
+        for (var di = -1; di <= 1; ++di)
+        for (var dj = -1; dj <= 1; ++dj)
+        {
+            if (di == 0 && dj == 0) continue;
+            var (x, y) = (i + di, j + dj);
+            while (0 <= x && 0 <= y && x < n && y < n)
+            {
+                opt += Cell(x, y) + " ";
+                x += di;
+                y += dj;
+            }
+        }
+
+        dl.ParseOption(opt);
+    }
+
+    string Cell(int i, int j) => $"c_{i}_{j}";
+
+
+    dl.Solve();
+    return dl.SolutionCount;
+}
+
+long WainwrightPackingPage92(int n)
+{
+    //n = 2;
+    dl.Clear();
+    // N=(1+2+..+n)^2=1^3+2^3+...+n^3
+    var N = n * (n + 1) / 2; // 1+2+3..+n
+    for (var i = 0; i < N; ++i)
+    for (var j = 0; j < N; ++j)
+        dl.AddItem($"c_{i}_{j}"); // cell i,j
+    for (var k = 1; k <= n; ++k)
+        dl.AddItem($"k_{k}", lowerBound: k, upperBound: k); // cover each of these k times
+
+
+    for (var k = 1; k <= n; ++k)
+    {
+        for (var i = 0; i <= N - k; ++i)
+        for (var j = 0; j <= N - k; ++j)
+        {
+            var opt = $"k_{k} ";
+            for (var di = 0; di < k; ++di)
+            for (var dj = 0; dj < k; ++dj)
+                opt += $"c_{i + di}_{j + dj} ";
+            // Console.WriteLine(opt);
+            dl.ParseOption(opt);
+        }
+    }
+
+    dl.Solve();
+    return dl.SolutionCount;
+
+}
+
+
 long ToyMultiplicity(bool dump=false)
 {
     dl.Clear();
@@ -268,12 +408,8 @@ long WordCube(int n)
     // todo - make Word(d1,d2,d3,...,dn) version
     dl.Clear();
 
-
-    var lines = File.ReadAllLines(@"..\..\..\words.txt");
-    var words = lines.Where(word => word.ToLower() == word && word.Length == n && AllAlpha(word)).ToList();
+    var words = GetWords("words.txt", n, toLower: true);
     Console.WriteLine($"{words.Count} {n}-letter words");
-
-    bool AllAlpha(string s) => s.ToCharArray().All(Char.IsLetter);
 
     // items:
     for (var i = 0; i < n; ++i)
@@ -304,13 +440,13 @@ long WordCube(int n)
             var (i, j) = (i1, j1); // for lambda capture
 
             var opx = Op("x", k => (k, i, j));
-            dl.AddOption(opx.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            dl.ParseOption(opx);
 
             var opy = Op("y", k => (i, k, j));
-            dl.AddOption(opy.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            dl.ParseOption(opy);
 
             var opz = Op("z", k => (i, j, k));
-            dl.AddOption(opz.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            dl.ParseOption(opz);
 
             string Op(string dir, Func<int, (int x, int y, int z)> perm)
             {
@@ -344,11 +480,8 @@ long DoubleWordSquare(int n)
     // exercise 87
     // 2n distinct words in n rows and n columns
 
-    var lines = File.ReadAllLines(@"..\..\..\words.txt");
-    var words = lines.Where(word => word.ToLower() == word && word.Length == n && AllAlpha(word)).ToList();
+    var words = GetWords("words.txt", n, toLower: true);
     Console.WriteLine($"{words.Count} {n}-letter words");
-
-    bool AllAlpha(string s) => s.ToCharArray().All(Char.IsLetter);
 
     // items:
     for (var i = 0; i < n; ++i)
@@ -376,7 +509,7 @@ long DoubleWordSquare(int n)
 
             // word 
             op += w;
-            dl.AddOption(op.Split(' ',StringSplitOptions.RemoveEmptyEntries));
+            dl.ParseOption(op);
         }
         for (var j = 0; j < n; ++j)
         {
@@ -387,7 +520,7 @@ long DoubleWordSquare(int n)
 
             // word 
             op += w;
-            dl.AddOption(op.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            dl.ParseOption(op);
         }
     }
 
@@ -428,8 +561,10 @@ long ToyColorPage89(bool dump)
     dl.AddOption("q x:A".Split(' '));
     dl.AddOption("r y:B".Split(' '));
 
-    // solution: 'q x' and 'p r x y' // todo - needs colors chosen also on output
-    
+    // solution: 
+    // q x:B   
+    // p r x:B y    
+
     if (dump)
         dl.DumpNodes(Console.Out);
     
@@ -461,7 +596,7 @@ long Exercise94()
         var a = (j >> 3) & 1;
 
         var opt = $"{j} p{k} x{k}:{a} x{(k + 1) % 16}:{b} x{(k + 3) % 16}:{c} x{(k + 4) % 16}:{d}";
-        dl.AddOption(opt.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        dl.ParseOption(opt);
     }
 
     dl.Solve();
