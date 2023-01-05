@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.Serialization;
 using DancingLinks;
 using Lomont.Algorithms;
 
@@ -10,30 +11,35 @@ var dl = new DancingLinksSolver();
 
 // todo - get toy dlx, toy secondary, toy colors, toy mult, toy mult with colors, etc. to quickly catch errors
 // test toy problems
-//Test(1, () => ToyDlxPage68());
-//Test(1, () => ToyColorPage89(dump: false));
-//Test(92, () => NQueens(8, useSecondary: true));
-//Test(1, ()=>ToyMultiplicity());
-//Test(1, () => ToyMultiplicityWithColor());
-//Test(64, Exercise94); // tests colors
+if (true)
+{
+    Test(1, () => ToyDlxPage68());
+    Test(1, () => ToyColorPage89(dump: false));
+    Test(92, () => NQueens(8, useSecondary: true));
+    Test(1, () => ToyMultiplicity());
+    Test(1, () => ToyMultiplicityWithColor());
+    Test(64, Exercise94); // tests colors
+    Test(11520, () => Soma(false));
+}
 
+return;
 
-// some options
+// set some useful options
 dl.SetOutput(Console.Out);
 // dl.Options.MinimumRemainingValuesHeuristic = false;
-dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
+//dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
 // dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
 // dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
-//dl.Options.MemsDumpStepSize = 1;
+dl.Options.MemsDumpStepSize = 1;
 //dl.Options.MemsDumpStepSize = 100_000;
 //dl.Options.MemsDumpStepSize = 1_000_000;
 //dl.Options.MemsDumpStepSize = 10_000_000;
 //dl.Options.MemsDumpStepSize = 100_000_000;
-dl.Options.MemsDumpStepSize = 1_000_000_000;
+//dl.Options.MemsDumpStepSize = 1_000_000_000;
 
-ToyColorPage89(true);
+//ToyColorPage89(dump:true);
 
-//WordP94(true);
+//WordP94(true); // todo - bad fields in print progress
 
 // should have solutions for n = 8
 //WainwrightPackingPage92(8); // long, needs tested
@@ -43,6 +49,8 @@ ToyColorPage89(true);
 //    Console.WriteLine("Wain " + n);
 //    WainwrightPackingPage92(n);
 //}
+
+//NQueenCover(3, 8); // 0 solns - todo - lots of print errors - figure out and fix, set memstep to 1 to see immediately
 
 
 //NQueenCover(1, 1); // 1 soln
@@ -173,6 +181,103 @@ Trace.Assert(LangfordPairs(3, false)==2);
 //LangfordPairs(7, false, 5);//1_000_000L);
 //Trace.Assert(LangfordPairs(16,true,1_000_000) == 326_721_800);
 #endif
+
+long Soma(bool dump)
+{ // 11520 solutions, 480 if "ell" piece not rotated, only shifted, form 240 mirror image pairs
+    var sz = 3; // 0,1,2 cells
+    dl.Clear();
+
+    if (false)
+    { // some polycube orientation testing
+
+        //var p1 = Polycubes.GetSoma(0);
+        //foreach (var q in p1.GetOrientations(allowFlips: false))
+        //{
+        //    q.Dump(Console.Out);
+        //}
+        //return 0;
+
+        for (var i = 0; i < 7; ++i)
+        {
+            var s = Polycubes.GetSoma(i);
+            var or = s.GetOrientations(allowFlips: false).ToList();
+            var orf = s.GetOrientations(allowFlips: true).ToList();
+            Console.WriteLine($"{s.Name} has {or.Count} orientations w/o flips, {orf.Count} with flips");
+        }
+
+        // test one
+        var p = new Polycubes.Piece(new[] {0, 0, 0}, "single");
+        Console.WriteLine(
+            $"{p.Name} has {p.GetOrientations(false).Count()} orientations w/o flips, {p.GetOrientations(true).Count()} with flips");
+
+        p = new Polycubes.Piece(new[] {0, 0, 0, 1, 2, 3, 1, 1, 2, 2, 3, 1, 0, 2, 2, 3, 0, 2, 1, 3, 3}, "chiral");
+        Console.WriteLine(
+            $"{p.Name} has {p.GetOrientations(false).Count()} orientations w/o flips, {p.GetOrientations(true).Count()} with flips");
+
+        foreach (var q in p.GetOrientations(true))
+        {
+            //q.Dump(Console.Out);
+        }
+
+        return 0;
+    }
+    // cover each cell
+    for (var i = 0; i < sz; ++i)
+    for (var j = 0; j < sz; ++j)
+    for (var k = 0; k < sz; ++k)
+        dl.AddItem(Cell(i, j, k));
+    // use each piece
+    for (var p =0; p < 7; ++p)
+        dl.AddItem($"{Polycubes.GetSoma(p).Name}");
+
+    // piece p covers cell i
+    var optCount = 0; // todo - get from dl
+    for (var p = 0; p < 7; ++p)
+    {
+        int localOptCount = 0;
+        var piece = Polycubes.GetSoma(p);
+        foreach (var or in piece.GetOrientations(allowFlips: false))
+            for (var i = 0 - 2*sz; i < 2*sz; ++i)
+            for (var j = 0 - 2*sz; j < 2*sz; ++j)
+            for (var k = 0 - 2*sz; k < 2*sz; ++k)
+            {
+                or.Shift(i, j, k);
+                {
+                    if (or.CountMatching(p=> Islegal(p.i,p.j,p.k)) == or.Size)
+                    {
+                        // piece in place, add option
+                        var opt = $"{piece.Name} ";
+                        foreach (var (x,y,z) in or.Coords())
+                        {
+                            opt += $"{Cell(x,y,z)} ";
+                        }
+                        dl.ParseOption(opt);
+                        ++localOptCount;
+                    }
+                }
+                or.Shift(-i, -j, -k);
+            }
+
+        optCount += localOptCount;
+        if (dump)
+            Console.WriteLine($"local opts {localOptCount}");
+    }
+
+
+    // pieces 0,1,..,6 have 12,24,12,12,12,12,8 base placements
+    // leading to 144,144,72,72,96,96,64 = 688 options for the 3x3 case
+    if (dump)
+        Console.WriteLine($"Soma opts {optCount} = 688");
+
+    bool Islegal(int i, int j, int k) => 0 <= i && 0 <= j && 0 <= k && i < sz && j < sz && k < sz;
+
+
+    dl.Solve();
+
+    return dl.SolutionCount;
+                string Cell(int i, int j, int k) => $"{i}_{j}_{k}";
+}
+
 
 List<string> GetWords(string filename, int len, bool toUppercase = false, bool toLower = false, bool allLetters = true, int count = -1)
 {
@@ -364,8 +469,8 @@ long ToyMultiplicity(bool dump=false)
     dl.AddItem("A");
     dl.AddItem("B");
     dl.AddItem("C", lowerBound: 2, upperBound: 3);
-    dl.AddOption(new[] { "A", "B", "C" });
-    dl.AddOption(new[] { "C" });
+    dl.AddOption("A B C");
+    dl.AddOption("C");
 
     if (dump)
         dl.DumpNodes(Console.Out);
@@ -386,11 +491,11 @@ long ToyMultiplicityWithColor(bool dump=false)
     dl.AddItem("X", secondary: true);
     dl.AddItem("Y", secondary: true);
 
-    dl.AddOption(new[] {"A", "B", "X:1", "Y:1"});
-    dl.AddOption(new[] {"A", "C", "X:2", "Y:2"});
-    dl.AddOption(new[] {"C", "X:1"});
-    dl.AddOption(new[] {"B", "X:2"});
-    dl.AddOption(new[] {"C", "Y:2"});
+    dl.AddOption("A B X:1 Y:1");
+    dl.AddOption("A C X:2 Y:2");
+    dl.AddOption("C X:1");
+    dl.AddOption("B X:2");
+    dl.AddOption("C Y:2");
 
     // unique solution { A C X:2 Y:2} { B X:2}  { C Y:2}
 
@@ -471,7 +576,6 @@ long WordCube(int n)
     return dl.SolutionCount;
 
     string Cell(int i, int j, int k) => $"c_{i}_{j}_{k}";
-
 }
 
 long DoubleWordSquare(int n)
@@ -555,11 +659,11 @@ long ToyColorPage89(bool dump)
     dl.AddItem("x", true);
     dl.AddItem("y", true);
 
-    dl.AddOption("p q x y:A".Split(' '));
-    dl.AddOption("p r x:A y".Split(' ')); // change to x:C to get no solution
-    dl.AddOption("p x:B".Split(' '));
-    dl.AddOption("q x:A".Split(' '));
-    dl.AddOption("r y:B".Split(' '));
+    dl.AddOption("p q x y:A");
+    dl.AddOption("p r x:A y"); // change to x:C to get no solution
+    dl.AddOption("p x:B");
+    dl.AddOption("q x:A");
+    dl.AddOption("r y:B");
 
     // solution: 
     // q x:B   
@@ -722,10 +826,10 @@ void Dudney()
         cells.Add((i, j));
 
     bool OnBoard(Polyominoes.Piece piece)
-        => piece.CountMatching(p => (0 <= p.i && p.i < w && 0 <= p.j && p.j < h)) == piece.size;
+        => piece.CountMatching(p => (0 <= p.i && p.i < w && 0 <= p.j && p.j < h)) == piece.Size;
 
     var pieces = Enumerable.Range(0, 12).Select(p => DancingLinks.Polyominoes.GetPentomino(p)).ToList();
-    var p = new Polyominoes.Piece(new int[]{0,0,1,0,0,1,1,1},0,1,0,"tetromino");
+    var p = new Polyominoes.Piece(new int[]{0,0,1,0,0,1,1,1},1,0,"tetromino");
     pieces.Add(p);
     Polyominoes(cells, OnBoard, pieces);
 }

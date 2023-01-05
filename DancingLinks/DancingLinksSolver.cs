@@ -1,5 +1,4 @@
-﻿using Microsoft.Win32;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 
 namespace Lomont.Algorithms;
@@ -54,11 +53,12 @@ public class DancingLinksSolver
 
 
     /* TODO
+    - can we remove secondary as a flag and simply use 0-1 bounds?
     - MIT license
     - extend to have a name for each row, and return row names in solution 
     - DONE: move namespace to match other Lomont DL
     - DONE: add color codes algo as generalization XC = exact cover, XCC = with colors
-    - MCC adds multiplicities to color problem
+    - DONE: MCC adds multiplicities to color problem
     - explain colors, secondary items, slack versus secondary, examples, etc.
     - track updates per depth, nodes per depth, like DL paper, show updates/node, etc.
     - add nice description of how to use: mention slack vars and secondary items
@@ -67,7 +67,7 @@ public class DancingLinksSolver
     - Z produces XCC solns as ZDDS which can be handles in other ways
     - make as drop in replacement for my old DancingLinks code
     - make nicer parser for file, command line, other uses
-    - output colors in solutions (not currently working?)
+    - DONE: output colors in solutions (not currently working?)
     - output costs in solutions (not currently working?)
     - error if color assigned to non-secondary item
     - output for bound and slack
@@ -75,8 +75,7 @@ public class DancingLinksSolver
     - extend cost C$ and X$ algos to an M$ algo, send to Knuth
     - better M3 step choices - see book and exercises for ideas
 
-    items strings, spaced out, '|' splits primary from secondary
-    - 
+    - items strings, spaced out, '|' splits primary from secondary
 
      -  Command line: tool - sets options, runs file or console or....
       -v[bcdpftwm] = things to show
@@ -102,16 +101,6 @@ public class DancingLinksSolver
     " | " separates primary from secondary items
     then lines of options
     option has  ':' for color after oni secondary items only
-
-| A simple example of color controls
-A B 2:3|C | X Y
-A B X:0 Y:0
-A C X:1 Y:1
-C X:0
-B X:1
-C Y:1
-
-has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     Costs:
     Append things like "|$n" where n is nonnegative integer
@@ -139,9 +128,10 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         formatter.Reset();
 
         // initial spacer items
-        AddSpacer(true); // regular nodes all 0s
-        AddSpacer(false); // name nodes all 0s
-        AddName("_"); // not in map, so not usable or discoverable by outside
+        var spacerName = "_";
+        AddRegularSpacer(); // regular nodes all 0s
+        AddNameSpacer(spacerName); // name nodes all 0s
+        AddName(spacerName); // not in map, so not usable or discoverable by outside
     }
 
     #region Solver and output options
@@ -184,12 +174,11 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         public long MemsDumpStepSize { get; set; } = 10_000_000_000;
 
         /// <summary>
-        /// max mems till 'timeout'
+        /// max mems till 'timeout' and stop search
         /// </summary>
         public long MemsStopThreshold { get; set; } = Int64.MaxValue; // max mems, else timeout
 
-
-        // todo - describe and use these
+        // todo - describe and use these, test them
         internal int Spacing = 0; // solution count spacing, 0 for show none
         internal long MaxSolutionCount = Int64.MaxValue; // max solutions to show
         internal int ShowLevelMax = 1000000; // show this many levels max, else show ...
@@ -209,12 +198,6 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     /// Add items. See AddItem for format
     /// </summary>
     /// <param name="items"></param>
-    public void AddItems(params string[] items) => AddItems((IEnumerable<string>)items);
-
-    /// <summary>
-    /// Add items. 
-    /// </summary>
-    /// <param name="items"></param>
     public void AddItems(IEnumerable<string> items)
     {
         foreach (var item in items)
@@ -224,15 +207,14 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     /// <summary>
     /// Add a new item by unique name
     /// Secondary items must come after all primary items
-    /// TODO - detail how these work
     /// </summary>
-    /// <param name="name"></param>
-    /// <param name="secondary"></param>
-    /// <param name="lowerBound"></param>
-    /// <param name="upperBound"></param>
+    /// <param name="name">The unique text name of the item</param>
+    /// <param name="secondary">If this a secondary item or not</param>
+    /// <param name="lowerBound">The least number of times to cover this item</param>
+    /// <param name="upperBound">The most number of times to cover this item</param>
     public void AddItem(string name, bool secondary = false, int lowerBound = 1, int upperBound = 1)
     {
-        // track N = # items, N1 = primary items
+        // track N = # items, N1 = primary items, N2 = # secondary items
 
         // TODO - rewrite to be cleaner: track list of items, then gen all once all are added
         // as in exercise 8
@@ -244,11 +226,9 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             Trace.Assert(N2 == 0); // all must be primary before first secondary, then all secondary
 
 
-        var i = AddNode(false) + 1;
+        var i = AddNameNode(name) + 1;
+        
         AddName(name, i);
-
-        nameNodes[i].SetA(i); // name index
-
 
         // set node links
         var len = NameNodeCount;
@@ -260,7 +240,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         RLINK((i - 1 + len) % len, i);
 
         // update general nodes
-        var x = AddNode(true);
+        var x = AddNode();
         LEN(x, 0);
         ULINK(x, x); // point to self
         DLINK(x, x);
@@ -305,30 +285,48 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
     #region Options Input
 
+    /// <summary>
+    /// Split a string on spaces into items and pass them into AddOption
+    /// </summary>
+    /// <param name="option"></param>
     public void ParseOption(string option) => AddOption(option.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
-    public void AddOption(params string[] names) => AddOption((IEnumerable<string>)names);
+    /// <summary>
+    /// Add an option as a space separated list of items
+    /// </summary>
+    /// <param name="option">Space separated list of items</param>
+    public void AddOption(string option) => AddOption(option.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
-    public void AddOptions(IEnumerable<IList<string>> items)
+    public void AddOptions(IEnumerable<IList<string>> options)
     {
-        foreach (var item in items)
-            AddOption(item);
+        foreach (var option in options)
+            AddOption(option);
     }
 
-    // Every option must include at least one primary item otherwise the option will not be included in the solver
-    // todo - do exercise 19 which allows using options with only secondary items
-    public void AddOption(IEnumerable<string> names)
+
+    /// <summary>
+    /// Add an option which is a list of items in this option
+    /// Every option must include at least one primary item otherwise the option will not be included in the solver
+    /// todo - do exercise 19 which allows using options with only secondary items
+    /// an option can have suffix string ':color' on any secondary item where 'color'
+    /// is text. Then all options with that item must have the same 'color' tag. Note color simply
+    /// means all options with that item must have the same tag.
+    ///
+    /// TODO: add $cost suffix for cost, then solve minimum cost options
+    /// </summary>
+    /// <param name="items"></param>
+    /// <exception cref="NotImplementedException"></exception>
+    public void AddOption(IEnumerable<string> items)
     {
         if (NodeCount == NamesCount)
         {
             // first option after items added
-            AddSpacer(true, true); // initial spacer
+            AddRegularSpacer(true); // initial spacer
         }
 
-
-        foreach (var name1 in names)
+        foreach (var item in items)
         {
-            var name = name1;
+            var name = item;
 
             string color = ""; // empty for none
             if (name.Contains(':'))
@@ -350,7 +348,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
             var i = NameIndex(name);
 
-            var x = AddNode(true); // node index
+            var x = AddNode(); // node index
 
             if (!String.IsNullOrEmpty(color))
                 COLOR(x, ColorIndex(color));
@@ -369,8 +367,8 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
             LEN(i, LEN(i) + 1); // one more in list
         }
 
-        AddSpacer(true, true);
-        ++optionCount;
+        AddRegularSpacer(true);
+        ++OptionCount;
 
     }
 
@@ -439,6 +437,11 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
     #endregion
 
     #region Stats
+
+    /// <summary>
+    /// Number of options added
+    /// </summary>
+    public int OptionCount { get; private set; } = 0; // count of options
 
     public long SolutionCount => Stats.SolutionCount;
     public LogStats Stats { get; private set; }
@@ -733,14 +736,14 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         }
 
         public void PrintOption(int p, long costThreshold = Int64.MaxValue)
-        {
-            if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
             {
-                dl.output.WriteLine($"Illegal option {p}!");
-                return;
-            }
-            foreach (var itemText in GetOptionItems(p, normalizeOrder: false))
-                dl.output.WriteLine(itemText);
+                if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
+                {
+                    dl.output.WriteLine($"Illegal option {p}!");
+                    return;
+                }
+                foreach (var itemText in GetOptionItems(p, normalizeOrder: false))
+                    dl.output.WriteLine(itemText);
             var s = ItemCost(p);
 
             int k, j, q;
@@ -752,8 +755,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
                     dl.output.Write(" (?)");
                     goto finish;
                 }
-                else
-                    q = dl.DLINK(q);
+                q = dl.DLINK(q);
             }
 
             for (q = dl.DLINK(dl.TOP(p)), j = 0; q >= dl.NameNodeCount; q = dl.DLINK(q), j++)
@@ -795,19 +797,19 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
             for (var l = 0; l < level; l++)
             {
-                var c = dl.TOP(choice[l]);
+                    var c = dl.TOP(choice[l]);
                 var d = dl.LEN(c);
 
                 int k, p;
                 for (k = 1, p = dl.DLINK(c); p != choice[l]; k++)
-                {
-                    if (k > dl.N)
                     {
-                        dl.output.WriteLine("ERROR - bad fields in Print Progress!");
-                        break;
+                        if (k > dl.N)
+                        {
+                            dl.output.WriteLine("ERROR - bad fields in Print Progress!");
+                            break;
+                        }
+                        p = dl.DLINK(p);
                     }
-                    p = dl.DLINK(p);
-                }
 
                 fd *= d;
                 f += (k - 1) / fd;
@@ -897,7 +899,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         // if show totals selected
         // print totals of item covers...?
 
-        Stats.ResetStats(optionCount);
+        Stats.ResetStats(OptionCount);
         Stats.StartTimer();
         if (Options.Randomize)
             rand = new Random(Options.RandomSeed);
@@ -1079,7 +1081,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
         SanityCheck(); // todo - remove, check on option
 
-        Stats.ResetStats(optionCount);
+        Stats.ResetStats(OptionCount);
         Stats.StartTimer();
         if (Options.Randomize)
             rand = new Random(Options.RandomSeed);
@@ -1589,21 +1591,37 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         return val % m;
     }
 
+    /// <summary>
+    /// Add node, return index
+    /// </summary>
+    /// <returns></returns>
+    int AddNameNode(string name)
+    {
+        var nodes1 = nameNodes;
+        nodes1.Add(new(name));
+        return NodeCount - 1;
+    }
 
     /// <summary>
     /// Add node, return index
     /// </summary>
     /// <returns></returns>
-    int AddNode(bool regularNode)
+    int AddNode()
     {
-        var nodes1 = regularNode ? nodes : nameNodes;
+        var nodes1 = nodes;
         nodes1.Add(new());
         return NodeCount - 1;
     }
 
-    void AddSpacer(bool regularNode, bool link = false)
+    void AddNameSpacer(string name)
     {
-        var x = AddNode(regularNode);
+        AddNameNode(name);
+    }
+
+
+    void AddRegularSpacer(bool link = false)
+    {
+        var x = AddNode();
         if (link)
         {
             TOP(x, spacerIndex--);
@@ -1666,7 +1684,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
 
 
     // todo - abstract out so I can change it around, only func calls access the other stuff
-    string NAME(int i) => Names[nameNodes[i].a];
+    string NAME(int i) => nameNodes[i].Name;
 
     void AddName(string name, int index = -1)
     {
@@ -1778,7 +1796,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         NameMap.Clear();
         nameNodes.Clear();
         nodes.Clear();
-        optionCount = 0;
+        OptionCount = 0;
         spacerIndex = 0;
         lastSpacerIndex = 0;
         N2 = 0; 
@@ -1794,7 +1812,7 @@ has unique solution of options {A C X:1 Y:1}  {B X:1} {C Y:1}
         K = 0;
     }
 
-int COLOR(int x)
+    int COLOR(int x)
     {
         Stats.Mem();
         return nodes[x].datum;
@@ -1818,7 +1836,6 @@ int COLOR(int x)
     }
 
     // state
-    int optionCount = 0; // count of options
 
     // throughout, N = total items, N1 = primary items, N2 = secondary items
     int N => NameNodeCount - 1; // -1 for spacer address
@@ -1837,11 +1854,11 @@ int COLOR(int x)
     // better to put all into (for C# memory) one array, each cell 4 ints long, update the accessors, hide the node and such arrays
 
     // name text to node index
-    readonly Dictionary<string, int> NameMap = new();
+    readonly Dictionary<string, int> NameMap = new(); // used to detect duplicates
     readonly List<string> Names = new();
 
     readonly List<Node> nodes = new();
-    readonly List<Node> nameNodes = new(); // one empty node, then one per item
+    readonly List<NameNode> nameNodes = new(); // one empty node, then one per item
 
     readonly List<string> Colors = new(); // 0 is not used, other index from node datum
     readonly Dictionary<string, int> ColorMap = new(); // color name to index in Colors
@@ -1874,6 +1891,21 @@ int COLOR(int x)
         Stats.Mem();
         bound[x] = val;
     }
+
+    // entire thing is an array, each elt is 3 integers, accessed closely together
+    // we call them a,b,c, access through accessors as in Knuth TAOCP
+    class NameNode
+    {
+        public NameNode(string name) => Name = name;
+        //public void SetA(int val) => a = val; // trying to get to work as a struct - does not work...
+        public void SetB(int val) => b = val; // trying to get to work as a struct - does not work...
+        public void SetC(int val) => c = val; // trying to get to work as a struct - does not work...
+        public void SetD(int val) => datum = val; // trying to get to work as a struct - does not work...
+        public string Name { get; private set; }
+        public int b = 0, c = 0;
+        public int datum = 0; // pads to 128 bits, used as info per node
+    }
+
 
     // entire thing is an array, each elt is 3 integers, accessed closely together
     // we call them a,b,c, access through accessors as in Knuth TAOCP
@@ -1960,7 +1992,7 @@ int COLOR(int x)
     /// Count of NumRows so far
     /// </summary>
     [Obsolete("RowCount is deprecated.")]
-    public int RowCount => optionCount;
+    public int RowCount => OptionCount;
 
     /// <summary>
     /// Disconnect a row
