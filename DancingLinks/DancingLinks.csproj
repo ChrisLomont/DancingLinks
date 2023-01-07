@@ -8,8 +8,4 @@
     <RootNamespace>Lomont.Algorithms</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="data\" />
-  </ItemGroup>
-
 </Project>
