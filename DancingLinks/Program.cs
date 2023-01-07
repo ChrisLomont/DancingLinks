@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Reflection.Metadata.Ecma335;
 using System.Runtime.Serialization;
 using DancingLinks;
 using Lomont.Algorithms;
@@ -11,7 +12,7 @@ var dl = new DancingLinksSolver();
 
 // todo - get toy dlx, toy secondary, toy colors, toy mult, toy mult with colors, etc. to quickly catch errors
 // test toy problems
-if (true)
+if (false)
 {
     Test(1, () => ToyDlxPage68());
     Test(1, () => ToyColorPage89(dump: false));
@@ -22,20 +23,39 @@ if (true)
     Test(11520, () => Soma(false));
 }
 
-return;
+
+
+//return;
 
 // set some useful options
 dl.SetOutput(Console.Out);
 // dl.Options.MinimumRemainingValuesHeuristic = false;
 //dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
 // dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
-// dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
 dl.Options.MemsDumpStepSize = 1;
 //dl.Options.MemsDumpStepSize = 100_000;
 //dl.Options.MemsDumpStepSize = 1_000_000;
 //dl.Options.MemsDumpStepSize = 10_000_000;
-//dl.Options.MemsDumpStepSize = 100_000_000;
+dl.Options.MemsDumpStepSize = 100_000_000;
 //dl.Options.MemsDumpStepSize = 1_000_000_000;
+
+WordShape("most_common_words.txt");//,numWords:130);
+//DoubleWordSquare(3, "most_common_words.txt", numWords: 100);
+
+//WordCube(2, "most_common_words.txt", numWords: 62); // 12 solutions
+//WordCube(3, "most_common_words.txt",numWords:470);//, "sgb_words.txt",2500); // none at 350, 425, some at 500, some at 470
+//WordCube(3, wordfile:"primes.txt", allLetters:false); // finds one, crashes
+//WordCube(4, wordfile: "primes.txt", allLetters: false, numWords:1000); // has formatting bug, finds 
+//WordCube(5, wordfile: "primes.txt", allLetters: false); // has formatting bug, 8363 primes, finds 
+//WordCube(5, wordfile: "primes.txt", allLetters: false); // crashes
+
+//DoubleWordSquare(5, "sgb_words.txt", specialWord:"chris");
+//DoubleWordSquare(4, specialWord: "abbe", specialIndex:0);
+//DoubleWordSquare(6, specialWord: "stacie", specialIndex: 5);
+//DoubleWordSquare(5, specialWord: "chris", specialIndex: 3);
+//DoubleWordSquare(3,specialWord:"the",specialIndex:0);
+//DoubleWordSquare(12); // specialWord:"the",specialIndex:0); // none
 
 //ToyColorPage89(dump:true);
 
@@ -279,7 +299,13 @@ long Soma(bool dump)
 }
 
 
-List<string> GetWords(string filename, int len, bool toUppercase = false, bool toLower = false, bool allLetters = true, int count = -1)
+List<string> GetWords(
+    string filename, 
+    int len, 
+    bool toUppercase = false, 
+    bool toLower = false, 
+    bool allLetters = true, 
+    int count = -1)
 {
     var words = File.ReadAllLines(@"..\..\..\" + filename).ToList();
     words = words.Where(w => w.Length == len).ToList();
@@ -507,13 +533,18 @@ long ToyMultiplicityWithColor(bool dump=false)
 }
 
 
-long WordCube(int n)
+long WordCube(int n, string wordfile="",int numWords = -1, bool allLetters = false)
 {
     // word cube
     // todo - make Word(d1,d2,d3,...,dn) version
     dl.Clear();
 
-    var words = GetWords("words.txt", n, toLower: true);
+    if (wordfile == "")
+        wordfile = "words.txt";
+    var words = GetWords(wordfile, n, toLower: true, allLetters:allLetters);
+    if (numWords > 0)
+        words = words.Take(numWords).ToList();
+
     Console.WriteLine($"{words.Count} {n}-letter words");
 
     // items:
@@ -531,7 +562,6 @@ long WordCube(int n)
         dl.AddItem(Cell(i, j, k), true); // cells have colors, are secondary
     foreach (var word in words)
         dl.AddItem(word, true);
-
 
     // options
     foreach (var w in words)
@@ -567,24 +597,282 @@ long WordCube(int n)
                 op += w;
                 return op;
             }
-
         }
     }
 
+    dl.SolutionListener += Dump;
     dl.Solve();
+    dl.SolutionListener -= Dump;
 
     return dl.SolutionCount;
 
     string Cell(int i, int j, int k) => $"c_{i}_{j}_{k}";
+
+    bool Dump(long solutions,long moves,List<List<string>> options)
+    {
+        var c = new char[n, n, n];
+        foreach (var items in options)
+        {
+            var loc = items[0]; // x_3_2
+            var word = items.Last(); 
+            var w = loc.Split('_').Skip(1).ToList();
+            var c1 = Int32.Parse(w[0]);
+            var c2 = Int32.Parse(w[1]);
+            var (x, y, z, dx, dy, dz) = loc[0] switch
+            {
+                'x' => (0, c1, c2, 1, 0, 0),
+                'y' => (c1, 0, c2, 0, 1, 0),
+                'z' => (c1, c2, 0, 0, 0, 1),
+                _ => throw new NotImplementedException()
+            };
+            foreach (var ch in word)
+            {
+                c[x, y, z] = ch;
+                x += dx;
+                y += dy;
+                z += dz;
+            }
+        }
+
+        Console.WriteLine("Solution : top layer on down");
+        for (var z = 0; z < n; ++z)
+        {
+            for (var x = 0; x < n; ++x)
+            {
+                for (var y = 0; y < n; ++y)
+                    Console.Write(c[x, y, z]);
+                Console.WriteLine();
+            }
+            Console.WriteLine();
+        }
+
+        return true;
+    }
 }
 
-long DoubleWordSquare(int n)
-{   
+long WordShape(string wordfile = "", int numWords = -1, bool allLetters = false)
+{
+    // word shape - fill cells
+
+#if true
+    // 7 wide disk
+    var cells = new int[]
+    {
+                    6, 2, 6, 3, 6, 4, // top
+              5, 1, 5, 2, 5, 3, 5, 4, 5, 5,
+        4, 0, 4, 1, 4, 2, 4, 3, 4, 4, 4, 5, 4, 6,
+        3, 0, 3, 1, 3, 2, 3, 3, 3, 4, 3, 5, 3, 6,
+        2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 2, 5, 2, 6,
+              1, 1, 1, 2, 1, 3, 1, 4, 1, 5,
+                    0, 2, 0, 3, 0, 4, 
+    }.Chunk(2).Select(p => (i: p[0], j: p[1])).ToList();
+#endif
+#if false
+    // 7 torus
+    var cells = new int[]
+    {
+                    6, 2, 6, 3, 6, 4, // top
+              5, 1, 5, 2, 5, 3, 5, 4, 5, 5,
+        4, 0, 4, 1, 4, 2,       4, 4, 4, 5, 4, 6,
+        3, 0, 3, 1,                   3, 5, 3, 6,
+        2, 0, 2, 1, 2, 2,       2, 4, 2, 5, 2, 6,
+              1, 1, 1, 2, 1, 3, 1, 4, 1, 5,
+                    0, 2, 0, 3, 0, 4, 
+    }.Chunk(2).Select(p => (i: p[0], j: p[1])).ToList();
+#endif
+#if false
+    // 5 disk
+    var cells = new int[]
+    {
+              4, 1, 4, 2, 4, 3, 
+        3, 0, 3, 1, 3, 2, 3, 3, 3, 4, 
+        2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 
+        1, 0, 1, 1, 1, 2, 1, 3, 1, 4, 
+              0, 1, 0, 2, 0, 3, 
+    }.Chunk(2).Select(p => (i: p[0], j: p[1])).ToList();
+#endif
+#if false
+    // 5 torus
+    var cells = new int[]
+    {
+              4, 1, 4, 2, 4, 3,
+        3, 0, 3, 1, 3, 2, 3, 3, 3, 4,
+        2, 0, 2, 1,       2, 3, 2, 4,
+        1, 0, 1, 1, 1, 2, 1, 3, 1, 4,
+              0, 1, 0, 2, 0, 3,
+    }.Chunk(2).Select(p => (i: p[0], j: p[1])).ToList();
+#endif
+#if false
+    // 3 sq
+    var cells = new int[]
+    {
+        2, 0, 2, 1, 2, 2,
+        1, 0, 1, 1, 1, 2,
+        0, 0, 0, 1, 0, 2,
+    }.Chunk(2).Select(p => (i: p[0], j: p[1])).ToList();
+#endif
+
     dl.Clear();
+
+    var runs = new List<((int i, int j), (int di, int dj), int len)>();
+
+    // get list of rows and columns by lengths
+    var minx = cells.Min(p => p.i);
+    var maxx = cells.Max(p => p.i);
+    var miny = cells.Min(p => p.j);
+    var maxy = cells.Max(p => p.j);
+    for (var i = minx; i <= maxx; ++i)
+    for (var j = miny; j <= maxy; ++j)
+    {
+        int d1, d2;
+        if (cells.Contains((i, j)))
+        {
+            // go up and down to edges
+            d1 = 0;
+            while (cells.Contains((i + d1, j)))
+                d1--;
+            d1++;
+            d2 = 0;
+            while (cells.Contains((i + d2, j)))
+                d2++;
+            d2--;
+            var run1 = ((i + d1, j), (1, 0), d2 - d1 + 1);
+            if (!runs.Contains(run1))
+                runs.Add(run1);
+
+            // go left and right to edges
+            d1 = 0;
+            while (cells.Contains((i, j + d1)))
+                d1--;
+            d1++;
+            d2 = 0;
+            while (cells.Contains((i, j + d2)))
+                d2++;
+            d2--;
+            var run2 = ((i, j + d1), (0, 1), d2 - d1 + 1);
+            if (!runs.Contains(run2))
+                runs.Add(run2);
+        }
+    }
+
+    Console.WriteLine($"{runs.Count} slots to fill");
+
+    // words by run length
+    var wordLists = new Dictionary<int, List<string>>();
+    foreach (var r in runs)
+        if (!wordLists.ContainsKey(r.len))
+        {
+            var words = GetWords(wordfile, r.len, toLower: true, allLetters: allLetters);
+            if (numWords > 0) words = words.Take(numWords).ToList();
+            wordLists.Add(r.len, words);
+            Console.WriteLine($"{words.Count} words of length {r.len} added");
+        }
+
+
+    // items:
+    // across and down items
+    foreach (var ((i, j), (di, dj), _) in runs)
+    {
+        if (di == 1)
+            dl.AddItem($"a_{i}_{j}"); // across direction
+        if (dj == 1)
+            dl.AddItem($"d_{i}_{j}"); // down direction
+    }
+
+    foreach (var (i, j) in cells)
+        dl.AddItem(Cell(i, j), true); // cells have colors, are secondary
+
+    // all words
+    foreach (var list in wordLists.Values)
+    foreach (var word in list)
+        dl.AddItem(word, true);
+
+    // options
+    foreach (var ((i, j), (di, dj), len) in runs)
+    foreach (var word in wordLists[len])
+    {
+        string op = "";
+        if (di == 1)
+            op = $"a_{i}_{j} "; // across
+        else
+            op = $"d_{i}_{j} "; // down
+
+        var (i1, j1) = (i, j);
+        foreach (var ch in word)
+        {
+            op += $"{Cell(i1, j1)}:{ch} ";
+            i1 += di;
+            j1 += dj;
+        }
+
+        op += word;
+        dl.ParseOption(op);
+    }
+
+    Console.WriteLine($"{dl.OptionCount} options");
+
+
+    dl.SolutionListener += Dump;
+    dl.Solve();
+    dl.SolutionListener -= Dump;
+
+    return dl.SolutionCount;
+
+    string Cell(int i, int j) => $"c_{i}_{j}";
+
+    bool Dump(long solutions, long moves, List<List<string>> options)
+    {
+        var c = new char[maxx - minx + 1, maxy - miny + 1];
+        foreach (var items in options)
+        {
+            var loc = items[0]; // a/d_3_2
+            var word = items.Last();
+            var w = loc.Split('_').Skip(1).ToList();
+            var i = Int32.Parse(w[0]);
+            var j = Int32.Parse(w[1]);
+            var di = loc[0] == 'a' ? 1 : 0;
+            var dj = loc[0] == 'd' ? 1 : 0;
+
+            foreach (var ch in word)
+            {
+                c[i, j] = ch;
+                i += di;
+                j += dj;
+            }
+        }
+
+        Console.WriteLine("Solution : ");
+        for (var x = 0; x < c.GetLength(0); ++x)
+        {
+            for (var y = 0; y < c.GetLength(1); ++y)
+            {
+                var ch = c[x, y];
+                Console.Write(ch == 0 ? ' ' : ch);
+            }
+
+            Console.WriteLine();
+        }
+
+        Console.WriteLine();
+
+        return true;
+    }
+}
+
+long DoubleWordSquare(int n, string wordfile = "", int numWords = -1, string specialWord = "", int specialIndex = -1)
+{
+
+        dl.Clear();
     // exercise 87
     // 2n distinct words in n rows and n columns
 
-    var words = GetWords("words.txt", n, toLower: true);
+    if (wordfile == "")
+        wordfile = "words.txt";
+    var words = GetWords(wordfile, n, toLower: true);
+    if (numWords > 0)
+        words = words.Take(numWords).ToList();
+
+
     Console.WriteLine($"{words.Count} {n}-letter words");
 
     // items:
@@ -593,16 +881,44 @@ long DoubleWordSquare(int n)
         dl.AddItem($"a_{i}"); // across i
         dl.AddItem($"d_{i}"); // down i
     }
+
+    // special case: add a word, mandatory use 2 times
+    if (specialWord != "")
+        dl.AddItem(specialWord, lowerBound: 1, upperBound: 1);
+
     for (var i = 0; i < n; ++i)
     for (var j = 0; j < n; ++j)
         dl.AddItem(Cell(i,j),true); // cells have colors, are secondary
     foreach (var word in words)
-        dl.AddItem(word,true);
+        if (word != specialWord)
+            dl.AddItem(word,true);
+
+    if (specialWord != "")
+    {
+        var index = specialIndex >=0 ? specialIndex : n /2; // where to place row and column
+        // special case: add a word, mandatory use 2 times
+        var w = specialWord;
+
+        // special option: use down and across in middle
+        var a = $"a_{index} ";
+        var d = $"d_{index} ";
+        for (var k = 0; k < w.Length; ++k)
+        {
+            a += $"{Cell(index, k)}:{w[k]} ";
+            d += $"{Cell(k, index)}:{w[k]} ";
+        }
+
+        a += w;
+        d += w;
+        dl.ParseOption(a);
+        //dl.ParseOption(d);
+    }
 
 
     // options
     foreach (var w in words)
     {
+        if (w == specialWord) continue;
         // across or down, letters, cells:
         for (var i = 0; i < n; ++i)
         {
@@ -627,11 +943,13 @@ long DoubleWordSquare(int n)
             dl.ParseOption(op);
         }
     }
+    Console.WriteLine($"{dl.OptionCount} options");
 
-    dl.Options.MemsDumpStepSize = 10_000_000;
-    dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+
+    //dl.Options.MemsDumpStepSize = 10_000_000;
+    //dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
     dl.Solve();
-    dl.Options.OutputFlags &= ~DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+    //dl.Options.OutputFlags &= ~DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
 
     string Cell(int i, int j) => $"c_{i}_{j}";
 

@@ -7,8 +7,9 @@ namespace Lomont.Algorithms;
 // Replaces my earlier DLX solvers from the past 20-ish years
 //
 // Chris Lomont, 2023
-//     - rewrite to handle all the new variants in Knuth's
-//       "The Art of Computer Programming" (TAOCP) volume 4B, "Combinatorial Algorithms, Part II"
+//     - rewrite to handle all the new variants in Knuth's 
+//       "The Art of Computer Programming" (TAOCP) volume 4B,
+//       "Combinatorial Algorithms, Part II"
 //       Also references his 2002 paper Dancing Links
 // Some of my older version comments :
 // Chris Lomont, 2015, 
@@ -53,8 +54,9 @@ public class DancingLinksSolver
 
 
     /* TODO
-    - can we remove secondary as a flag and simply use 0-1 bounds?
     - MIT license
+    - can we remove secondary as a flag and simply use 0-1 bounds?
+       - do speed testing between algos before deprecating/removing any
     - extend to have a name for each row, and return row names in solution 
     - DONE: move namespace to match other Lomont DL
     - DONE: add color codes algo as generalization XC = exact cover, XCC = with colors
@@ -491,6 +493,16 @@ public class DancingLinksSolver
         public void StartTimer() => timer.Restart();
 
         public void StopTimer() => timer.Stop();
+        
+        /// <summary>
+        /// Track some memory stats
+        /// Dumps state or progress if asked
+        /// Stop progress if past mems threshold
+        /// Called at step 2, on entering a new level
+        /// </summary>
+        /// <param name="level"></param>
+        /// <param name="x"></param>
+        /// <returns></returns>
         public bool TrackMemory(int level, int[] x)
         {
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Profile))
@@ -722,10 +734,15 @@ public class DancingLinksSolver
             while (true)
             {
                 var name = dl.NAME(dl.TOP(q));
-                if (dl.hasColor && dl.COLOR(q) != 0)
+                var cq = dl.COLOR(q);
+                if (dl.hasColor &&  cq != 0)
                 {
-                    var color = dl.Colors[dl.COLOR(q) > 0 ? dl.COLOR(q) : dl.COLOR(dl.TOP(q))];
-                    name += $":{color}";
+                    var qt = dl.TOP(q);
+                    var index = cq > 0 ? cq : dl.COLOR(qt);
+                    if (index >= dl.Colors.Count)
+                        name += ":ERR"; //todo - we hit this sometimes = fix it
+                    else
+                        name += $":{dl.Colors[index]}";
                 }
                 yield return name;
 
