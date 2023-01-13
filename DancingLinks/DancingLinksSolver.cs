@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
-using System.IO;
+using System.Text.RegularExpressions;
+using static Lomont.Algorithms.DancingLinksSolver.SolverOptions;
 
 namespace Lomont.Algorithms;
 
@@ -55,12 +56,16 @@ public class DancingLinksSolver
 
     /* TODO
     - MIT license
+    - consider how to add memoization so parts of the search space repeatedly computed are skipped.... is this possible? Many search trees have lots of redundancy
+    - add user callback every (user settable) many mems or nodes or such, allowing interactive quitting, inspection , etc.
     - can we remove secondary as a flag and simply use 0-1 bounds?
        - do speed testing between algos before deprecating/removing any
     - extend to have a name for each row, and return row names in solution 
     - DONE: move namespace to match other Lomont DL
     - DONE: add color codes algo as generalization XC = exact cover, XCC = with colors
     - DONE: MCC adds multiplicities to color problem
+    - add MonteCarlo estimator as in book
+    - do all examples and problems in book as examples in code
     - explain colors, secondary items, slack versus secondary, examples, etc.
     - track updates per depth, nodes per depth, like DL paper, show updates/node, etc.
     - add nice description of how to use: mention slack vars and secondary items
@@ -102,7 +107,7 @@ public class DancingLinksSolver
     default to 1
     " | " separates primary from secondary items
     then lines of options
-    option has  ':' for color after oni secondary items only
+    option has  ':' for color on secondary items only
 
     Costs:
     Append things like "|$n" where n is nonnegative integer
@@ -128,6 +133,7 @@ public class DancingLinksSolver
 
         Stats.ResetStats(1);
         formatter.Reset();
+        LowestCostSolutions.Clear();
 
         // initial spacer items
         var spacerName = "_";
@@ -216,6 +222,12 @@ public class DancingLinksSolver
     /// <param name="upperBound">The most number of times to cover this item</param>
     public void AddItem(string name, bool secondary = false, int lowerBound = 1, int upperBound = 1)
     {
+#if true
+        if (upperBound != 1 || lowerBound != 1)
+            hasMultiplicities = true;
+        items.Add(new(name,secondary, lowerBound, upperBound));
+        hasSecondary |= secondary;
+#else
         // track N = # items, N1 = primary items, N2 = # secondary items
 
         // TODO - rewrite to be cleaner: track list of items, then gen all once all are added
@@ -281,11 +293,13 @@ public class DancingLinksSolver
         }
 
         //  DumpNodes(Console.Out);
+#endif
     }
 
-    #endregion
 
-    #region Options Input
+#endregion
+
+#region Options Input
 
     /// <summary>
     /// Split a string on spaces into items and pass them into AddOption
@@ -320,63 +334,37 @@ public class DancingLinksSolver
     /// <exception cref="NotImplementedException"></exception>
     public void AddOption(IEnumerable<string> items)
     {
-        if (NodeCount == NamesCount)
-        {
-            // first option after items added
-            AddRegularSpacer(true); // initial spacer
-        }
-
+        var pat = @"^(?<name>[^$:|]*)((:(?<color>[^$:|]+))|(\$(?<cost>[0-9]+))){0,2}$";
+        var reg = new Regex(pat);
+        var opt = new List<(string, string, long)>();
         foreach (var item in items)
         {
-            var name = item;
+            var m = reg.Match(item);
+            if (!m.Success)
+                throw new Exception($"Invalid item {item} in option");
+            var name  = m.Groups["name"].Value;
+            var color = m.Groups["color"].Success ? m.Groups["color"].Value : "";
+            var cost  = m.Groups["cost"].Success ? Int64.Parse(m.Groups["cost"].Value) : -1;
+            
+            // for debugging
+            //Console.WriteLine($"Item: name:{name} color {color} cost {cost}");
 
-            string color = ""; // empty for none
-            if (name.Contains(':'))
-            {
+            if (color != "")
                 hasColor = true;
-                var w = name.Split(':', StringSplitOptions.RemoveEmptyEntries);
-                Trace.Assert(w.Length == 2);
-                color = w[1];
-                name = w[0];
-            }
+            if (cost != -1)
+                hasCost = true;
 
-            if (name.Contains('$'))
-            {
-                //todo.
-                // lots to do to make it work
-                throw new NotImplementedException("Option costs not implemented");
-                //name = ;
-            }
-
-            var i = NameIndex(name);
-
-            var x = AddNode(); // node index
-
-            if (!String.IsNullOrEmpty(color))
-                COLOR(x, ColorIndex(color));
-
-            // new node settings
-            TOP(x, i); // header and name items
-
-            // link to top nodes lists
-            var prev = ULINK(i);
-            ULINK(x, prev);
-            DLINK(prev, x);
-
-            ULINK(i, x);
-            DLINK(x, i);
-
-            LEN(i, LEN(i) + 1); // one more in list
+            opt.Add(new(name, color, cost));
         }
 
-        AddRegularSpacer(true);
-        ++OptionCount;
-
+        options.Add(new Option(opt));
     }
 
-    #endregion
 
-    #region Output listener, formatting solutions
+
+#endregion
+
+#region Output listener, formatting solutions
 
     /// <summary>
     /// Each solution can be captured using this delegate.
@@ -436,9 +424,9 @@ public class DancingLinksSolver
         }
     }
 
-    #endregion
+#endregion
 
-    #region Stats
+#region Stats
 
     /// <summary>
     /// Number of options added
@@ -656,7 +644,7 @@ public class DancingLinksSolver
                 dl.Options.ShapeOutput.Close(); // todo -  dont; close console.out - how to cloe file but not this?
         }
 
-        #region Implementation
+#region Implementation
 
         DancingLinksSolver dl;
         public int maxLevelSeen = 0; // max level seen while searching
@@ -674,11 +662,14 @@ public class DancingLinksSolver
 
 
 
-        #endregion
+#endregion
     } // stats class
 
-    #endregion
+#endregion
 
+/// <summary>
+/// Abstract out formatting of various things in the memory structures
+/// </summary>
     class Formatter
     {
         DancingLinksSolver dl;
@@ -742,8 +733,11 @@ public class DancingLinksSolver
                     if (index >= dl.Colors.Count)
                         name += ":ERR"; //todo - we hit this sometimes = fix it
                     else
-                        name += $":{dl.Colors[index]}";
+                        name += $":{dl.Colors[index-1]}";
                 }
+
+                if (dl.hasCost && dl.COST(q) > 0)
+                    name += $"${dl.COST(q)}";
                 yield return name;
 
                 q++;
@@ -809,24 +803,25 @@ public class DancingLinksSolver
         {
             // based on Exercise #12, as noted on page 73
 
-            dl.output.Write($" after {dl.Stats.memAccesses} mems: {dl.SolutionCount} sols,");
+            dl.output.Write($" after {dl.Stats.memAccesses} mems: {dl.SolutionCount} sols, ");
             double f = 0, fd = 1;
 
             for (var l = 0; l < level; l++)
             {
-                    var c = dl.TOP(choice[l]);
+                var c = dl.TOP(choice[l]);
                 var d = dl.LEN(c);
 
                 int k, p;
                 for (k = 1, p = dl.DLINK(c); p != choice[l]; k++)
+                {
+                    if (k > dl.N)
                     {
-                        if (k > dl.N)
-                        {
-                            dl.output.WriteLine("ERROR - bad fields in Print Progress!");
-                            break;
-                        }
-                        p = dl.DLINK(p);
+                        dl.output.WriteLine("ERROR - bad fields in Print Progress!");
+                        break;
                     }
+
+                    p = dl.DLINK(p);
+                }
 
                 fd *= d;
                 f += (k - 1) / fd;
@@ -903,13 +898,49 @@ public class DancingLinksSolver
     /// Solve the problem instance.
     /// Answers are written to wherever output was sent.
     /// </summary>
-    public void Solve()
+    public void Solve(int topKbyCosts = 1)
     {
+        // todo - count initialize mem accesses here.
+        PrepItemsAndOptions();
+
+        // determine instance type from hasSecondary, hasColor, hasMultiplicities, hasCost
+        var type = (hasSecondary, hasColor, hasMultiplicities, hasCost) switch
+        {// second, color,  mult,  cost
+            (false, false, false, false) => "AlgorithmX",
+            (true , false, false, false) => "AlgorithmX (with secondary)",
+            (false, true , false, false) => "AlgorithmC",
+            (true , true , false, false) => "AlgorithmC (with secondary)",
+            (false, false, true , false) => "AlgorithmM",
+            (true , false, true , false) => "AlgorithmM (with secondary)",
+            (false, true , true , false) => "AlgorithmM (with colors)",
+            (true , true , true , false) => "AlgorithmM (with colors and secondary)",
+
+            (false, false, false, true ) => "AlgorithmX$ (X with costs)",
+            (true , false, false, true ) => "AlgorithmX$ (X with costs and secondary)",
+            (false, true , false, true ) => "AlgorithmC$ (C with costs)",
+            (true , true , false, true ) => "AlgorithmC$ (C with costs and secondary)",
+            (_, _, true , true ) => throw new Exception("Problems cannot have both costs and multiplicities (other than secondary items)"),
+        };
+        
+
+        // todo - output flavor of problem too: DLX, DLC< DLM, X$, etc.
+        if (Options.OutputFlags.HasFlag(ShowFlags.Basics))
+            output.WriteLine($"Solving with {items.Count} items and {options.Count} options using algorithm {type}");
+        
+        if (hasCost)
+        {
+            SolveC(topKbyCosts);
+            return;
+        }
+
         if (hasMultiplicities)
         { // can make all use SolveM if bounds added for each item.
             SolveM(); // todo - unify all solutions into one solver?
             return;
         }
+
+        // solve AlgorithmX and AlgorithmC problems
+
 
         // todo - on randomizing, shuffle items? shuffle options? keep 
         // todo - print options count, item count, node count, secondary item count, etc. here
@@ -939,7 +970,6 @@ public class DancingLinksSolver
                 case 1: // Initialize: load data as above
                     Z = lastSpacerIndex;
 
-
                     l = 0; // level
                     step = 2;
                     break;
@@ -954,7 +984,7 @@ public class DancingLinksSolver
                         if (done)
                             break;
 
-                        done |= !VisitSolution(x, l); // solution in x0,x1,..,x_{l-1}
+                        done |= !VisitSolution(x, l, 0); // solution in x0,x1,..,x_{l-1}
 
                         done |= Stats.TrackSolutions(l);
                         if (done)
@@ -1158,7 +1188,7 @@ public class DancingLinksSolver
                         if (done)
                             break;
 
-                        done |= !VisitSolution(x, l); // solution in x0,x1,..,x_{l-1}
+                        done |= !VisitSolution(x, l, 0); // solution in x0,x1,..,x_{l-1}
 
                         done |= Stats.TrackSolutions(l);
                         if (done)
@@ -1372,9 +1402,458 @@ public class DancingLinksSolver
         Stats.ShowFinalStats(x);
     }
 
-    #region Implementation
+    /// <summary>
+    /// If instance had costs, and lowest cost solutions were desired,
+    /// they are returned here, lowest cost first.
+    /// </summary>
+    public List<(long cost, List<List<string>> solution)> LowestCostSolutions { get; } = new();
 
-    #region Hide, Cover, Purify, Tweak, etc.
+    /// <summary>
+    /// Solve the problem instance.
+    /// Answers are written to wherever output was sent.
+    /// Solves Knuth Algorithm X$ and C$ problems
+    /// </summary>
+    void SolveC(int topKbyCosts)
+    {
+#if true
+        // todo - on randomizing, shuffle items? shuffle options? keep 
+        // todo - print options count, item count, node count, secondary item count, etc. here
+        // if show totals selected
+        // print totals of item covers...?
+
+        Stats.ResetStats(OptionCount);
+        Stats.StartTimer();
+        if (Options.Randomize)
+            rand = new Random(Options.RandomSeed);
+
+        var step = 1; // represent algo step C$1 through C$8
+        int Z = 0, l = 0, i = 0; //, xl = 0;
+        long [] C = new long[Stats.maxAllowedLevel]; // cost by level
+        long[] TH0 = new long[Stats.maxAllowedLevel]; // threshold_0 by level, = BEST- C[l] - COST(x[l])
+        long[] TH = new long[Stats.maxAllowedLevel]; // threshold by level, decreases
+
+        best = new MaxHeap<List<List<string>>>(topKbyCosts); // track top K best costs
+        // todo; - track best solutions also
+        //long threshold = Int64.MaxValue; // cost cutoff
+        long thresh = Int64.MaxValue;
+
+        var sanityChecking = false; // todo - make Option
+
+        // for local work
+        int j = 0, p = 0;
+
+        // solution
+        var x = new int[Stats.maxAllowedLevel]; // overkill in space
+
+        var done = false;
+        // this follows Knuth TAOCP notation and format
+        while (!done)
+        {
+            //Console.WriteLine($"Step {step}");
+            switch (step)
+            {
+                case 1: // Initialize: load data as above
+                    Z = lastSpacerIndex;
+                    l = 0; // level
+                    step = 2;
+                    break;
+                case 2: // Enter level l
+                    if (sanityChecking) 
+                        CheckSanity();
+
+                    done |= Stats.TrackMemory(l, x); // progress updates
+                    if (done)
+                        break;
+
+                    if (RLINK(0) == 0) // all items covered
+                    {
+                        done |= Stats.TrackShape(l);
+                        if (done)
+                            break;
+
+                        done |= !VisitSolution(x, l, C[l - 1] + COST(x[l-1])); // solution in x0,x1,..,x_{l-1}
+
+                        done |= Stats.TrackSolutions(l);
+                        if (done)
+                            break;
+
+                        step = 8;
+                    }
+                    else
+                        step = 3;
+
+                    break;
+                case 3: // Choose i
+
+                    step = 4; // default next step
+
+                    // todo - abstract out to func calls?
+                    // need one of i1, i2, .., it, where i1= RLINK(0), i_{j+1}=RLINK(i_j), RLINK(it)=0
+                    // choose one, here can use MRV (Exercise 9 - todo)
+
+                    // will always walk to get stats
+
+                    Stats.TrackLevels(0, l); // walk levels to show
+                    var tm = int.MaxValue; // max nodes
+
+                    // old way to choose i
+                    var ct = 0; // count larger than min?
+                    p = RLINK(0);
+                    i = p; // minIndex
+                    while (p != 0)
+                    {
+                        Stats.TrackLevels(1, l, p);
+                        if (LEN(p) < tm)
+                        {
+                            tm = LEN(p);
+                            i = p;
+                            ct = 1;
+                        }
+                        else
+                        {
+                            ct++;
+                            // choose random number of nodes to skip (Reservoir Sampling)
+                            if (Options.Randomize && UniformRand(ct) == 0)
+                                i = p; // best_item
+
+                        }
+
+                        p = RLINK(p);
+                    }
+
+                    // i is best for MRV, if not MRV, take first
+                    // todo - cannot choose RLINK(0) blindly without considering costs?
+                    if (!Options.MinimumRemainingValuesHeuristic)
+                        i = RLINK(0); // choose first for now
+
+
+
+                    {
+                        // cost related cutoffs? and choose i
+                        // exercise 248 has some details here
+                        var t = long.MaxValue;
+                    long c = 0;
+                    long cp = 0;
+                    var L = 10; // Knuth uses 10 in exercise 248, is a parameter
+                    j = RLINK(0);
+                    while (j > 0)
+                    {
+                        p = DLINK(j);
+                        cp = COST(p);
+                        if (p == j || cp >= thresh)
+                        {
+                            step = 8;
+                            break;
+                        }
+
+                        var s = 1;
+                        p = DLINK(p);
+                        while (true)
+                        {
+                            if (p == j || COST(p) >= thresh)
+                            {
+                                break;
+
+                            }
+                            else if (s == t)
+                            {
+                                s++;
+                                break;
+
+                            }
+                            else if (s >= L)
+                            {
+                                s = LEN(j);
+                                tm = Math.Min(tm, s);
+                                break;
+                            }
+                            else
+                            {
+                                s += 1;
+                                p = DLINK(p);
+                            }
+                        }
+
+                        if (s < t || (s == t && c < cp))
+                        {
+                            t = s;
+                            i = j;
+                            c = cp;
+                        }
+
+                        j = RLINK(j);
+                    }
+                }
+                    // todo - restore Stats.TrackLevels(1,l,p)
+
+                  
+
+                    Stats.TrackLevels(2, l, -1, i, tm);
+
+                    break;
+                case 4: // Cover item i using (12) from TAOCP
+                    // C[l] is cost of x0,x1,..x_{l-1}
+                    if (l>0)
+                        C[l] = COST(x[l-1]) + C[l - 1];
+                    x[l] = DLINK(i);
+                    TH0[l] = best.Top - C[l] - COST(x[l]);
+                    //TH0[l] = Int64.MaxValue; // todo: remove line
+                    Trace.Assert(TH0[l]>0); // item i chosen to make this so
+                    Cover_S(i, hasColor, TH0[l]);
+                    //Console.WriteLine($"Cover {l}:{TH0[l]}");
+                    step = 5;
+                    break;
+                case 5: // Try xl 
+                    thresh = best.Top - C[l] - COST(x[l]); // may change time to time?
+                    //thresh = Int64.MaxValue; // todo - remove
+                    if (x[l] == i || thresh <= 0)
+                        step = 7; // we tried all options for i
+                    else
+                    {
+                        TH[l] = thresh; // +1 for level increase later
+                        Stats.TrackChoices(l, x[l]);
+
+                        p = x[l] + 1;
+                        while (p != x[l])
+                        {
+                            j = TOP(p);
+                            if (j <= 0)
+                                p = ULINK(p);
+                            else
+                            {
+                                CommitQ_S(p, j, TH[l]); // to match undo in step 6
+                                //Console.WriteLine($"Commit {l}:{TH[l]}");
+                                //Cover(j);
+                                p = p + 1;
+                            }
+                        }
+
+                        l = l + 1;
+                        done |= Stats.TrackLevels(l);
+                        if (done) break;
+
+                        step = 2;
+                    }
+
+                    break;
+                case 6: // Try again
+                    p = x[l] - 1;
+                    while (p != x[l])
+                    {
+                        j = TOP(p);
+                        if (j <= 0)
+                            p = DLINK(p);
+                        else
+                        {
+                            UncommitQ_S(p, j, TH[l]);
+                            //Console.WriteLine($"Uncommit {l}:{TH[l]}");
+                            p = p - 1;
+                        }
+                    }
+
+                    i = TOP(x[l]);
+                    x[l] = DLINK(x[l]);
+                    step = 5;
+                    break;
+                case 7: // Backtrack
+                    Uncover_S(i, hasColor, TH0[l]);
+                    //Console.WriteLine($"Uncover {l}:{TH0[l]}");
+                    step = 8;
+                    break;
+                case 8: // leave level l
+                    if (l == 0)
+                    {
+                        done = true;
+                        break;
+                    }
+
+                    l = l - 1;
+                    step = 6;
+                    break;
+                default:
+                    throw new InvalidOperationException("Algorithm X invalid step");
+            }
+        }
+        if (sanityChecking) 
+            CheckSanity();
+
+
+        Stats.StopTimer();
+        Stats.ShowFinalStats(x);
+
+        // get best solutions
+        LowestCostSolutions.AddRange(best.Values!);
+        // sort by non-decreasing cost
+        LowestCostSolutions.Sort((a,b)=> a.cost.CompareTo(b.cost));
+
+        void CheckSanity()
+        {
+            int k, q, p, pp, qq, t;
+            for (q = 0, p = RLINK(q); ; q = p, p = RLINK(p))
+            { // next = RLINK, pref = LLINK
+                if (LLINK(p) != q)
+                    output.WriteLine($"Bad LLINK field at item {NAME(p)}");
+                if (p == 0) break;
+
+                for (qq = p, pp = DLINK(qq), k = 0; ; qq = pp, pp = DLINK(pp), k++)
+                {
+                    if (ULINK(pp) != qq)
+                        output.WriteLine($"Bad ULINK field at node {pp}");
+                    if (pp == p) break;
+                    if (TOP(pp) != p)
+                        output.WriteLine($"Bad TOP field at node {pp}");
+                    if (qq > p && COST(pp) < COST(qq))
+                        output.WriteLine($"Costs out of order between nodes {pp} and {qq}");
+                }
+                if (p < N && LEN(p) != k)  // should this be N? N1? N2?
+                    output.WriteLine($"Bad LEN field in item {NAME(p)}");
+            }
+        }
+#endif
+
+
+    }
+
+
+#region Implementation
+
+#region Hide, Cover, Purify, Tweak, etc.
+
+#region Cost versions 
+
+// suffix _S represents _$
+
+    void CommitQ_S(int p, int j, long threshold)
+    {
+        if (!hasColor)
+            Cover_S(j, false, threshold); // AlgorithmX$
+        else
+            Commit_S(p, j, threshold);
+    }
+    void Commit_S(int p, int j, long threshold)
+    {
+        if (COLOR(p) == 0) Cover_S(j, true, threshold);
+        if (COLOR(p) > 0) Purify_S(p, threshold);
+    }
+    void UncommitQ_S(int p, int j, long threshold)
+    {
+        if (!hasColor)
+            Uncover_S(j, false, threshold); // AlgorithmX
+        else
+            Uncommit_S(p, j, threshold);
+    }
+    void Uncommit_S(int p, int j, long threshold)
+    {
+        if (COLOR(p) == 0) Uncover_S(j, true, threshold);
+        if (COLOR(p) > 0) Unpurify_S(p, threshold);
+    }
+    void Unpurify_S(int p, long threshold)
+    {
+        var c = COLOR(p); 
+        var i = TOP(p);   
+        var q = DLINK(i); 
+        while (q != i && COST(q) < threshold)
+        {
+            if (COLOR(q) < 0)
+                COLOR(q, c);
+            else
+                Unhide_S(q, true, threshold);
+            q = DLINK(q);
+        }
+    }
+    void Cover_S(int i, bool primed, long threshold)
+    {
+        var p = DLINK(i); 
+        Stats.Update();
+        while (p != i && COST(p) < threshold)
+        {
+            Hide_S(p, primed);
+            p = DLINK(p);
+        }
+
+        var l = LLINK(i);
+        var r = RLINK(i);
+        RLINK(l, r);
+        LLINK(r, l);
+    }
+    void Purify_S(int p, long threshold)
+    {
+        var c = COLOR(p);
+        var i = TOP(p);
+        COLOR(i, c);
+        var q = DLINK(i);
+        while (q != i && COST(q) < threshold)
+        {
+            if (COLOR(q) == c)
+                COLOR(q, -1);
+            else
+                Hide_S(q, true);
+            q = DLINK(q);
+        }
+    }
+    void Uncover_S(int i, bool primed, long threshold)
+    {
+        var l = LLINK(i);
+        var r = RLINK(i);
+        RLINK(l, i);
+        LLINK(r, i);
+        var p = DLINK(i);
+        while (p != i && COST(p) < threshold)
+        {
+            Unhide_S(p, primed, threshold);
+            p = DLINK(p);
+        }
+    }
+    void Hide_S(int p, bool primed)
+    {
+        var q = p + 1;
+        while (q != p)
+        {
+            var x = TOP(q);
+            var u = ULINK(q);
+            var d = DLINK(q);
+            if (x <= 0)
+                q = u; // q was a spacer
+            else
+            {
+                if (COLOR(q) >= 0 || !primed)
+                {
+                    DLINK(u, d);
+                    ULINK(d, u);
+                    LEN(x, LEN(x) - 1);
+                }
+
+                q = q + 1;
+                Stats.Update();
+            }
+        }
+    }
+
+    void Unhide_S(int p, bool primed, long threshold)
+    {
+        var q = p + 1; 
+        while (q != p)
+        {
+            var x = TOP(q);
+            var u = ULINK(q);
+            var d = DLINK(q);
+            if (x <= 0)
+                q = u; // q was a spacer
+            else
+            {
+                if (COLOR(q) >= 0 || !primed)
+                {
+                    DLINK(u, q);
+                    ULINK(d, q);
+                    LEN(x, LEN(x) + 1);
+                }
+
+                q = q + 1;
+            }
+        }
+    }
+#endregion
+
 
     void Tweak(int x, int p, bool primed)
     {
@@ -1411,6 +1890,9 @@ public class DancingLinksSolver
             Uncover(p, true);
     }
 
+   
+
+
     void CommitQ(int p, int j)
     {
         if (!hasColor)
@@ -1418,6 +1900,8 @@ public class DancingLinksSolver
         else
             Commit(p, j);
     }
+
+ 
 
     void Commit(int p, int j)
     {
@@ -1441,6 +1925,8 @@ public class DancingLinksSolver
         }
     }
 
+
+
     void UncommitQ(int p, int j)
     {
         if (!hasColor)
@@ -1449,11 +1935,15 @@ public class DancingLinksSolver
             Uncommit(p, j);
     }
 
+ 
+
     void Uncommit(int p, int j)
     {
         if (COLOR(p) == 0) Uncover(j, true);
         if (COLOR(p) > 0) Unpurify(p);
     }
+
+
 
     void Unpurify(int p)
     {
@@ -1469,6 +1959,9 @@ public class DancingLinksSolver
             q = ULINK(q);
         }
     }
+
+ 
+
 
     void Cover(int i, bool primed)
     {
@@ -1510,6 +2003,8 @@ public class DancingLinksSolver
             }
         }
     }
+    
+
 
     void Uncover(int i, bool primed)
     {
@@ -1525,6 +2020,7 @@ public class DancingLinksSolver
         }
     }
 
+   
     void Unhide(int p, bool primed)
     {
         var q = p - 1;
@@ -1549,7 +2045,7 @@ public class DancingLinksSolver
         }
     }
 
-    #endregion
+#endregion
 
     /// <summary>
     /// Get solution described as a list of options, each option given as a list of items
@@ -1572,18 +2068,25 @@ public class DancingLinksSolver
     /// </summary>
     /// <returns>true to continue search, else false to stop</returns>
 
-    bool VisitSolution(int[] x, int l)
+    bool VisitSolution(int[] x, int l, long currentCost)
     {
         // solution in x0, x1, ...,x_{l-1}
+        List<List<string>>? solutionOptions = null;
 
         ++Stats.SolutionCount;
+        if (hasCost)
+        {
+            solutionOptions = GetSolution(x, l);
+            best.Insert(currentCost, solutionOptions); // todo - pass in solution for tracking and later printing
+        }
 
         var printSoln = Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.AllSolutions);
         var solutionEventHandler = SolutionListener;
         if (solutionEventHandler == null && !printSoln)
             return true; // nothing else to do
-
-        var solutionOptions = GetSolution(x, l);
+        
+        if (solutionOptions == null)
+            solutionOptions = GetSolution(x, l);
 
         if (printSoln)
             formatter.PrintSolution(solutionOptions);
@@ -1668,7 +2171,7 @@ public class DancingLinksSolver
                 if (pp == p) break;
                 if (TOP(pp) != p)
                     Error($"Bad TOP at node {pp}");
-                if (qq > p && COST(pp) < COST(qq))
+                if (qq > p && hasCost && COST(pp) < COST(qq))
                     Error($"Costs out of order at node {pp}");
             }
 
@@ -1684,7 +2187,150 @@ public class DancingLinksSolver
         }
     }
 
-    #region underlying data structure
+    /// <summary>
+    /// Add stored items and options to system
+    /// Allows some processing of them as a batch if needed
+    /// </summary>
+    void PrepItemsAndOptions()
+    {
+        long TotalCost(Option opt) => opt.Items.Sum(v => (v.Cost>0?v.Cost:0));
+
+        foreach (var (name, secondary, lowerBound, upperBound) in items)
+        {
+            // track N = # items, N1 = primary items, N2 = # secondary items
+
+            // TODO - rewrite to be cleaner: track list of items, then gen all once all are added
+            // as in exercise 8
+
+            // handle secondary items
+            if (secondary)
+                N2++;
+            else
+                Trace.Assert(N2 == 0); // all must be primary before first secondary, then all secondary
+
+
+            var i = AddNameNode(name) + 1;
+
+            AddName(name, i);
+
+            // set node links
+            var len = NameNodeCount;
+            RLINK(i, 0);
+            LLINK(i, (i - 1 + len) % len);
+
+            // attach prev and next
+            LLINK(0, i);
+            RLINK((i - 1 + len) % len, i);
+
+            // update general nodes
+            var x = AddNode();
+            LEN(x, 0);
+            ULINK(x, x); // point to self
+            DLINK(x, x);
+
+            if (N2 > 0)
+            {
+                // (link one less than second to 0)
+                LLINK(0, N1);
+                RLINK(N1, 0);
+
+                // (link second to end)
+                LLINK(N1 + 1, N);
+                RLINK(N, N1 + 1);
+            }
+
+            // only primary items can have these)
+            Trace.Assert(!secondary || (lowerBound == 1 && upperBound == 1),
+                "Secondary items cannot have lower or upper bounds that are not 1");
+
+            // todo - make all probs use algo m?
+            if (lowerBound != 1 || upperBound != 1)
+            //if (!secondary)
+            {
+                Trace.Assert(0 <= lowerBound);
+                Trace.Assert(lowerBound <= upperBound);
+                hasMultiplicities = true;
+                while (slack.Count <= x)
+                {
+                    // upper bound and lower bound default 1
+                    bound.Add(1); // upper bound
+                    slack.Add(0); // slack defaults to upper-lower
+                }
+
+                bound[x] = upperBound;
+                slack[x] = upperBound - lowerBound;
+            }
+
+            //  DumpNodes(Console.Out);
+        }
+
+        var opts2 = options;
+        if (hasCost)
+            opts2.Sort((a,b)=>TotalCost(a).CompareTo(TotalCost(b))); // sort increasing
+
+        foreach (var option in opts2)
+        {
+            if (NodeCount == NamesCount)
+            {
+                // first option after items added
+                AddRegularSpacer(true); // initial spacer
+            }
+
+            var cost = TotalCost(option); // each node in the option gets set to total option cost
+
+            foreach (var item in option.Items)
+            {
+                var name = item.ItemName;
+                var color = item.Color;
+
+                //string color = ""; // empty for none
+                //if (name.Contains(':'))
+                //{
+                //    hasColor = true;
+                //    var w = name.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                //    Trace.Assert(w.Length == 2);
+                //    color = w[1];
+                //    name = w[0];
+                //}
+
+                // if (name.Contains('$'))
+                // {
+                //     //todo.
+                //     // lots to do to make it work
+                //     throw new NotImplementedException("Option costs not implemented");
+                //     //name = ;
+                // }
+
+                var i = NameIndex(name);
+
+                var x = AddNode(); // node index
+                if (hasCost)
+                    COST(x, cost); // set it
+
+                if (!String.IsNullOrEmpty(color))
+                    COLOR(x, ColorIndex(color));
+
+                // new node settings
+                TOP(x, i); // header and name items
+
+                // link to top nodes lists
+                var prev = ULINK(i);
+                ULINK(x, prev);
+                DLINK(prev, x);
+
+                ULINK(i, x);
+                DLINK(x, i);
+
+                LEN(i, LEN(i) + 1); // one more in list
+            }
+
+            AddRegularSpacer(true);
+            ++OptionCount;
+        }
+    }
+
+
+#region underlying data structure
 
 
     int NameNodeCount => nameNodes.Count;
@@ -1789,23 +2435,138 @@ public class DancingLinksSolver
         nodes[x].SetC(val);
     }
 
-    #region COSTS - todo - finish impl
+#region COSTS
     bool hasCost = false;
 
-    long COST(int x) => 0; // for now
+    long COST(int x)
+    {
+        Stats.Mem();
+        return costs[x];
+    }
+
     private List<long> costs = new(); // one per node
     void COST(int x, long val)
     {
-        //todo;
+        while (costs.Count <= x)
+            costs.Add(0);
+        Stats.Mem();
+        costs[x] = val;
     }
     
-    // max heap in array, 1 indexed as in knuth
-    // K items
-    // thus best(j/2) >= best(j), 1<=j<=K
-    private List<long> best = new();
-    private int K = 0;
+    // max heap in array, 0 indexed (Knuth was 1 indexed)
+    // holds K items, fixed length K
+    public class MaxHeap<T>
+    {
+        public MaxHeap(int size)
+        {
 
-    #endregion
+            Size = size;
+            Values = new (long,T?)[size];
+            Clear();
+        }
+
+        public void Clear()
+        {
+            for (var i = 0; i < Size; ++i)
+                Values[i] = (Int64.MaxValue,default);
+        }
+
+        public (long value, T? data)[] Values { get; }
+        public int Size { get; }
+
+        // largest value
+        public long Top => Values[0].value;
+
+        public void Insert(long val, T data)
+        {
+            // insert into best if suitable
+            if (val >= Top) return; // no update
+            // val replaces best[0] in array
+            Values[0] = (val,data);
+            // filter down to ensure heap condition
+            // node i has left(i) = 2*i+1, right(i) = 2*i+2
+            var i = 0; // tree under i needs heapified
+            var j = 1; // left child of i
+            while (j < Size) // is there any child to this node?
+            {
+                // if right child larger, choose that one
+                if (j + 1 < Size && Values[j].value < Values[j + 1].value)
+                    j++; // right exists and is larger
+                // if parent >= both children, done
+                if (Values[i].value >= Values[j].value)
+                    break; // done
+                // else swap values and recurse on subtree
+                (Values[i], Values[j]) = (Values[j], Values[i]);
+                i = j; // other subtree is unchanged, so is ok. subtree under i=j needs checked
+                j = 2 * i + 1; // assume left is larger
+            }
+
+            Sanity();
+        }
+
+        [Conditional("DEBUG")]
+        void Sanity()
+        {
+            for (var i = 0; i < Size / 2 - 1; ++i)
+            {
+                Trace.Assert(Values[i].value >= Values[2 * i + 1].value && Values[i].value >= Values[2 * i + 2].value);
+            }
+        }
+
+
+        /// <summary>
+        /// test heap - dumps to console. throws errors
+        /// </summary>
+        public static void Test()
+        {
+            // testing heap
+            for (var pass = 0; pass < 1000; ++pass)
+            {
+                var rr = new Random(pass);
+                var h = new DancingLinksSolver.MaxHeap<int>(5 + pass/6);
+                Console.WriteLine($"New tree size {h.Size}");
+                for (var k = 0; k < 2 * (pass + 1); ++k)
+                {
+                    var v1 = rr.Next(10, 4*h.Size+10);
+                    Console.Write($"Insert {v1} : ");
+                    h.Insert(v1,0);
+                    Dump(h.Values.Select(t=>t.value).ToArray());
+                }
+
+                // now pop all out, ensure all are ordered
+                Console.Write("ordered: ");
+                var v = h.Top;
+                for (var k = 0; k < h.Size; ++k)
+                {
+                    Trace.Assert(h.Top <= v && v >= 0);
+                    v = h.Top;
+                    Console.Write($"{v} ");
+                    h.Insert(-1,0); // pushes out others
+                }
+
+                Console.Write(" rest -1 : ");
+                // should all be -1
+                Dump(h.Values.Select(t => t.value).ToArray());
+                void Dump(long[] vals)
+                {
+                    foreach (var v in vals)
+                        Console.Write($"{v} ");
+                    Console.WriteLine();
+                }
+            }
+        }
+    }
+
+    // best stores solutions and scores
+    MaxHeap<List<List<string>>> best = new(5);
+
+#endregion
+
+    record Item(string Name, bool Secondary, int LowerBound, int UpperBound);
+    readonly List<Item> items = new();
+    // color "" if none, Cost -1 if none
+    record Option(List<(string ItemName, string Color, long Cost)> Items);
+    readonly List<Option> options = new();
 
     void ClearData()
     {
@@ -1819,6 +2580,7 @@ public class DancingLinksSolver
         N2 = 0; 
         hasColor = false;
         hasMultiplicities = false;
+        hasSecondary = false;
         slack.Clear();
         bound.Clear();
 
@@ -1826,7 +2588,8 @@ public class DancingLinksSolver
         hasCost = false;
         costs.Clear();
         best.Clear();
-        K = 0;
+        items.Clear();
+        options.Clear();
     }
 
     int COLOR(int x)
@@ -1865,6 +2628,7 @@ public class DancingLinksSolver
     int lastSpacerIndex = 0;
     bool hasColor = false;
     bool hasMultiplicities = false;
+    bool hasSecondary = false;
 
 
     // todo - big rewrite - there is per class overhead, since array is array of classes
@@ -1936,13 +2700,13 @@ public class DancingLinksSolver
         public int datum = 0; // pads to 128 bits, used as info per node
     }
 
-    #endregion
+#endregion
 
-    #endregion
+#endregion
 
 
 
-    #region old interface
+#region old interface
 
     [Obsolete("AddColumn in deprecated, please use AddItem instead. Note inversion of mandatory/secondary flags")]
     public void AddColumn(string name, bool mandatory = true) => AddItem(name, !mandatory);
@@ -2029,6 +2793,6 @@ public class DancingLinksSolver
     {
     }
 
-    #endregion
+#endregion
 
 }

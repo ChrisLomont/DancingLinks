@@ -1,8 +1,11 @@
 ﻿using System.Diagnostics;
-using System.Reflection.Metadata.Ecma335;
-using System.Runtime.Serialization;
+using System.Text.RegularExpressions;
+using System.Xml.Schema;
 using DancingLinks;
 using Lomont.Algorithms;
+
+// testing to make insert works well
+//DancingLinksSolver.MaxHeap.Test();
 
 Console.WriteLine("Dancing links testing and experiments");
 
@@ -23,6 +26,7 @@ if (false)
     Test(11520, () => Soma(false));
 }
 
+//return;
 
 
 //return;
@@ -32,13 +36,30 @@ dl.SetOutput(Console.Out);
 // dl.Options.MinimumRemainingValuesHeuristic = false;
 //dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.All;
 // dl.Options.OutputFlags = DancingLinksSolver.SolverOptions.ShowFlags.None;
-dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
+//dl.Options.OutputFlags |= DancingLinksSolver.SolverOptions.ShowFlags.AllSolutions;
 dl.Options.MemsDumpStepSize = 1;
 //dl.Options.MemsDumpStepSize = 100_000;
 //dl.Options.MemsDumpStepSize = 1_000_000;
 //dl.Options.MemsDumpStepSize = 10_000_000;
 dl.Options.MemsDumpStepSize = 100_000_000;
 //dl.Options.MemsDumpStepSize = 1_000_000_000;
+
+//NQueens(16, mrv: true, topK:0); // 92 solutions
+
+PrimeSquares(1, 3, 3); // answer: 
+PrimeSquares(1, 3, 4); // answer: 
+
+
+//PrimeSquares(-1, 3, 3); // answer: 113 307 139
+//PrimeSquares(-1, 3, 4); // answer: 2111 1031 1193
+PrimeSquares(-1, 3, 5); // answer: 21211 10301 11393
+//PrimeSquares(-1, 3, 6); // answer: 111211 100103 331171
+//PrimeSquares(-1, 3, 7); // answer: 1111211 1000403 3193171
+return;
+
+// not working well yet?!
+// PrimeSquares(10); // 10 largest solutions
+
 
 WordShape("most_common_words.txt");//,numWords:130);
 //DoubleWordSquare(3, "most_common_words.txt", numWords: 100);
@@ -98,7 +119,7 @@ WordShape("most_common_words.txt");//,numWords:130);
 
 //WordCube(4);
 
-return;
+//return;
 
 //ToyMultiplicityWithColor();
 //return;
@@ -118,7 +139,7 @@ ToyColorPage89(false);
 //DoubleWordSquare(6);
 //WordCube(3);
 
-return;
+//return;
 
 //PackYSquare();
 //return;
@@ -201,6 +222,203 @@ Trace.Assert(LangfordPairs(3, false)==2);
 //LangfordPairs(7, false, 5);//1_000_000L);
 //Trace.Assert(LangfordPairs(16,true,1_000_000) == 326_721_800);
 #endif
+
+// |topN| is number to find, topN > 0 get largest, topN < 0 gets smallest
+    long PrimeSquares(int topN, int width = 5, int height = 5)
+{
+    // 5x5 squares of primes made of 10 different primes with smallest or largest possible product
+    // largest 5 can be found in 22 Gu, so reasonable
+    // shown in (111) and (112)
+    dl.Clear();
+    var primesW = GetWords("primes.txt", width, allLetters: false).Select(Int32.Parse).ToList();
+    var primesH = primesW;
+    Console.WriteLine($"{primesW.Count} {width}-digit primes loaded from {primesW[0]} to {primesW.Last()}");
+    if (width != height)
+    {
+        primesH = GetWords("primes.txt", height, allLetters: false).Select(Int32.Parse).ToList();
+        Console.WriteLine($"{primesH.Count} {height}-digit primes loaded from {primesH[0]} to {primesH.Last()}");
+    }
+
+    // items:
+    for (var i = 0; i < width; ++i)
+        dl.AddItem($"d_{i}"); // down i
+    for (var j = 0; j < height; ++j)
+        dl.AddItem($"a_{j}"); // across j
+
+    // cells have 'colors' (which are the digit placed there), are secondary
+    for (var i = 0; i < width; ++i)
+    for (var j = 0; j < height; ++j)
+        dl.AddItem(Cell(i, j), true);
+
+    // primes are secondary, this disallows duplicate prime usage
+    foreach (var prime in primesW)
+        dl.AddItem(prime.ToString(), true);
+    if (width!=height)
+        foreach (var prime in primesH)
+            dl.AddItem(prime.ToString(), true);
+
+    // we want to maximize the product of primes chosen
+    // costs are added per option, and are added in the algorithm, so
+    // we assign log(p) as the cost. Costs are integers, so we then
+    // choose Floor[C*log(p)] as the cost where C is chosen large enough
+    // to make values distinct enough we do not get errors, yet small
+    // enough that the sum does not overflow an int64 (the type of the cost)
+
+    // if p_m is largest prime under consideration, can show that
+    // C > 2/log(pm/(pm-2)) suffices. We'll take 5x that
+
+    var pm = Math.Max(primesH.Max(),primesW.Max());
+    var C = 10 / Math.Log(pm / (pm - 2.0));
+
+    // product of primes. By default, alg gets smallest solution,
+    // if we want largest solution, we make these of form K-cost where K-cost > 0
+    // and sum still fits in a int64
+    var K = 4*(width + height) * C*Math.Log(pm);
+
+    // cost function, 
+    long Cost(long val)
+    {
+        var cost = Math.Floor(C * Math.Log(val));
+        if (topN > 0)
+            cost = K - cost;
+        var icost = (long) cost;
+        Trace.Assert(0 < icost && icost < Int64.MaxValue/(2*(width+height)));
+        return icost;
+    }
+
+    foreach (var p in new[] {113,331,191,131,139,311 })
+    {
+        Console.WriteLine($"{p} - >{Cost(p)}");
+
+    }
+    Console.WriteLine($"Cost: 113 331 191 {Cost(113) + Cost(331) + Cost(191) + Cost(131) + Cost(139) + Cost(311)}");
+    Console.WriteLine($"Cost: 113 331 191 {Cost(113) + Cost(331) + Cost(191) + Cost(131) + Cost(139) + Cost(311)}");
+    Console.WriteLine($"Cost: 113 307 139 {Cost(113) + Cost(307) + Cost(139) + Cost(131) + Cost(103) + Cost(379)}");
+
+
+    // options with cost
+    foreach (var prime in primesH)
+    {
+        var w = prime.ToString();
+
+        var cost = Cost(prime);
+
+        // across or down, letters, cells:
+        for (var i = 0; i < width; ++i)
+        {
+            var op = $"d_{i}";
+            op += $"${cost}";
+            op += " ";
+            // cell:letter
+            for (var j = 0; j < height; ++j)
+                op += $"{Cell(i, j)}:{w[j]} ";
+
+            // prime used 
+            op += w;
+            dl.ParseOption(op);
+        }
+    }
+
+    foreach (var prime in primesW)
+    {
+        var w = prime.ToString();
+
+        var cost = Cost(prime);
+
+        for (var j = 0; j < height; ++j)
+        {
+            var op = $"a_{j}";
+            op += $"${cost}";
+            op += " ";
+            // cell:letter
+            for (var i = 0; i < width; ++i)
+                op += $"{Cell(i, j)}:{w[i]} ";
+
+            // prime used 
+            op += w;
+            dl.ParseOption(op);
+        }
+    }
+
+    // assign 9 to 0,2
+    // assign 9 to 1,2
+    //dl.ParseOption($"{Cell(0, 2)}:9");
+    //dl.ParseOption($"{Cell(1, 2)}:9");
+
+
+    //dl.SolutionListener += DumpCellSolution;
+    dl.Solve(topKbyCosts: Math.Abs(topN));
+    //dl.SolutionListener -= DumpCellSolution;
+
+    var s = 0;
+    foreach (var (cost, solution) in dl.LowestCostSolutions)
+    {
+        Console.WriteLine($"Cost {cost}:");
+        DumpCellSolution(++s, cost, solution);
+    }
+
+    return dl.SolutionCount;
+
+    string Cell(int i, int j) => $"c_{i}_{j}";
+}
+
+// reusable solution formatter for char grid like solutions
+// items must be formatted using the following conventions:
+// cells as c_i_j:char
+bool DumpCellSolution(long solutions, long moves, List<List<string>> options)
+{
+    var reg = new Regex(@"^c_?(?<i>\d+)_(?<j>\d+):(?<tag>[^\$]+)(\$\d+)?$");
+    // parse all items into (i,j,char) tuples
+    var tups = new List<(int i, int j, string tag)>();
+    foreach (var items in options)
+    foreach (var item in items)
+    {
+        var m = reg.Match(item);
+        if (m.Success)
+        {
+            var i = Int32.Parse(m.Groups["i"].Value);
+            var j = Int32.Parse(m.Groups["j"].Value);
+            var tag = m.Groups["tag"].Value;
+            tups.Add(new(i, j, tag));
+        }
+    }
+    
+    // get bounds
+    var minx = tups.Min(t => t.i);
+    var maxx = tups.Max(t => t.i);
+    var miny = tups.Min(t => t.j);
+    var maxy = tups.Max(t => t.j);
+
+    var c = new char[maxx - minx + 1, maxy - miny + 1];
+    foreach (var (i,j,t) in tups)
+    {
+        if (t.Length != 1)
+            Console.WriteLine($"Error! - {t} more than one char");
+        else
+        {
+            if (c[i, j] != 0 && c[i,j] != t[0])
+                Console.WriteLine($"Error! - ({i},{j}) over-specified with {c[i,j]} and {t}");
+            c[i, j] = t[0];
+        }
+    }
+   
+
+    Console.WriteLine("Solution : ");
+    for (var x = 0; x < c.GetLength(0); ++x)
+    {
+        for (var y = 0; y < c.GetLength(1); ++y)
+        {
+            var ch = c[x, y];
+            Console.Write(ch == 0 ? ' ' : ch);
+        }
+
+        Console.WriteLine();
+    }
+
+    Console.WriteLine();
+    return true;
+}
+
 
 long Soma(bool dump)
 { // 11520 solutions, 480 if "ell" piece not rotated, only shifted, form 240 mirror image pairs
@@ -307,7 +525,8 @@ List<string> GetWords(
     bool allLetters = true, 
     int count = -1)
 {
-    var words = File.ReadAllLines(@"..\..\..\" + filename).ToList();
+    var path = @"..\..\..\data\"; // todo - make smarter - search up and down current position for them
+    var words = File.ReadAllLines( path + filename).ToList();
     words = words.Where(w => w.Length == len).ToList();
     if (allLetters)
         words = words.Where(AllAlpha).ToList();
@@ -1335,7 +1554,12 @@ void Sudoku(params int[] board)
     //todo;
 }
 
-long NQueens(int n, bool organPipe = false, bool mrv = false, bool useSecondary = false)
+long NQueens(int n, 
+    bool organPipe = false, 
+    bool mrv = false, 
+    bool useSecondary = false,
+    int topK = 0 // >0 for max cost, < 0 for minCost
+    )
 { // page 71
   // items row_i, column_j, a_s (upward diag s), b_d (downward diagonal d)
   // options
@@ -1346,6 +1570,21 @@ long NQueens(int n, bool organPipe = false, bool mrv = false, bool useSecondary 
   // remove symmetries with exercise 20,22,23
 
     dl.Clear();
+
+    // cost for max or min
+    long Cost(int i, int j)
+    {
+        var dx = i - (n + 1) / 2.0;
+        var dy = j - (n + 1) / 2.0;
+        var dist = Math.Sqrt(dx * dx + dy * dy);
+        // dist ok for mins, i.e., when topK < 0
+        if (topK > 0)
+            dist = 2 * n - dist; // invert to get maximum
+
+        dist *= 100; // scale for rounding
+
+        return (long) dist;
+    }
 
     // items
     var diags = new HashSet<string>();
@@ -1370,7 +1609,7 @@ long NQueens(int n, bool organPipe = false, bool mrv = false, bool useSecondary 
         // slack vars
         for (var j = 1; j <= n; ++j)
         {
-            diags.Add($"a{i+j}"); // many dups here
+            diags.Add($"a{i + j}"); // many dups here
             diags.Add($"b{i - j}");
         }
     }
@@ -1380,7 +1619,13 @@ long NQueens(int n, bool organPipe = false, bool mrv = false, bool useSecondary 
     // options
     for (var i = 1; i <= n; ++i)
     for (var j = 1; j <= n; ++j)
-        dl.AddOption($"r{i} c{j} a{i+j} b{i-j}".Split());
+    {
+        var opt = $"r{i} c{j} a{i + j} b{i - j}";
+        if (topK != 0)
+            opt += $"${Cost(i,j)}"; // attach to last item, affects entire option
+        dl.AddOption(opt);
+    }
+
     // 4n-2 slack items
     Trace.Assert(diags.Count == 4*n-2);
     foreach (var d in diags)
