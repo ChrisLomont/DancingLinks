@@ -1,4 +1,29 @@
-﻿using System.Diagnostics;
+﻿/*
+MIT License
+
+Copyright (c) 2023 Chris Lomont
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using static Lomont.Algorithms.DancingLinksSolver.SolverOptions;
 
@@ -24,29 +49,25 @@ namespace Lomont.Algorithms;
 /// paper, as extended by his book TAOCP vol 4B.
 ///
 /// This solves basic dancing links, adds support for secondary items,
-/// colors, multiplicities. Planned to handle costs, preprocessing, and ZDDs
+/// colors, multiplicities, and costs. Planned to handle preprocessing and ZDDs
 /// 
 /// To use:
 /// 0. (Optional) set options
 ///    TODO - explain
 /// 1. Add each item. There is usually an item for each cell to cover and for
-///    each piece when solving puzzles. Items can be primary (required to be covered)
-///    or secondary (optionally covered). Secondary items can have 'colors' attached which
-///    require any solution to have all options picking the same color for that item. Primary
-///    items can have lower and upper bounds (default 1,1) for how many times it needs covered.
-/// 2. Add options which consist of a set of items to cover. An option can have a cost associated
+///    each piece when solving puzzles. Items can be primary (required to be covered, i.e., multiplicity 1)
+///    or secondary (optionally covered, i.e., multiplicity 0 or 1), or can have a multiplicity range [a,b].
+///    The multiplicity is the number of times this item needs selected in any solution.
+/// 2. Add options which consist of a set of items to cover. An option can assign a 'color' to an item which is
+///    a text tag that all options including that item must agree on. An option can have a cost associated
 ///    when computing the K lowest cost solutions.
 /// 3. Set output as desired. The Options can set things, SetOutput sets a stream writer, and
-///    event SolutionListener can be attached for getting all solutions, providing a way to stop
+///    event SolutionListener can be attached for getting all solutions and providing a way to stop
 ///    enumeration during a solve.
 /// 4. Call Solve, which automatically calls the correct internal solver.
-/// 5. Inspect Stats for solution count and other statistics.
-///
+/// 5. Result count is in SolutionCount, best cost solutions are in TODO. Inspect Stats for other statistics
 /// 
-/// The solver picks all subsets of rows that match the solver criteria. Basic is exactly one entry
-/// per item. Colors require a given item to have all options agreeing on that color. Secondary items
-/// default to 0 or 1 covering. Multiplicity allows setting a lower and upper bound on how many
-/// covers are for an item. Costs allow finding the K lowest cost solutions.
+/// The solver picks all subsets of options that match the item covering criteria. 
 /// </summary>
 public class DancingLinksSolver
 {
@@ -55,7 +76,7 @@ public class DancingLinksSolver
 
 
     /* TODO
-    - MIT license
+    - DONE: MIT license
     - consider how to add memoization so parts of the search space repeatedly computed are skipped.... is this possible? Many search trees have lots of redundancy
     - add user callback every (user settable) many mems or nodes or such, allowing interactive quitting, inspection , etc.
     - can we remove secondary as a flag and simply use 0-1 bounds?
@@ -70,18 +91,17 @@ public class DancingLinksSolver
     - track updates per depth, nodes per depth, like DL paper, show updates/node, etc.
     - add nice description of how to use: mention slack vars and secondary items
     - exercise 19 handles options with no primary items
-    - C$ handles with costs per options, return slowest cost
+    - DONE: C$ handles with costs per options, return lowest K costs
     - Z produces XCC solns as ZDDS which can be handles in other ways
-    - make as drop in replacement for my old DancingLinks code
+    - DONE: make as drop in replacement for my old DancingLinks code
     - make nicer parser for file, command line, other uses
     - DONE: output colors in solutions (not currently working?)
-    - output costs in solutions (not currently working?)
+    - DONE: output costs in solutions (not currently working?)
     - error if color assigned to non-secondary item
     - output for bound and slack
     - some sanity checking to ensure structure is valid, useful for debugging, extending
     - extend cost C$ and X$ algos to an M$ algo, send to Knuth
     - better M3 step choices - see book and exercises for ideas
-
     - items strings, spaced out, '|' splits primary from secondary
 
      -  Command line: tool - sets options, runs file or console or....
@@ -95,9 +115,6 @@ public class DancingLinksSolver
       -t = maxcount
       -T = timeout
       -S = shapefile....
-       
-
-
 
     Knuth format looks like this: 
     '|' starts comment line
@@ -110,11 +127,10 @@ public class DancingLinksSolver
     option has  ':' for color on secondary items only
 
     Costs:
-    Append things like "|$n" where n is nonnegative integer
+    Append things like "$n" where n is nonnegative integer
     to add cost to any option. If multiple such entries in same option, 
     option cost is their sum
      */
-
 
     public DancingLinksSolver()
     {

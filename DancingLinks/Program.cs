@@ -1,6 +1,9 @@
-﻿using System.Diagnostics;
+﻿// Chris Lomont 2023
+// various problems solved from Knuth books and papers to
+// illustrate use of Dancing Links variants
+
+using System.Diagnostics;
 using System.Text.RegularExpressions;
-using System.Xml.Schema;
 using DancingLinks;
 using Lomont.Algorithms;
 
@@ -14,9 +17,12 @@ var dl = new DancingLinksSolver();
 
 
 // todo - get toy dlx, toy secondary, toy colors, toy mult, toy mult with colors, etc. to quickly catch errors
+
 // test toy problems
-if (false)
+if (true)
 {
+    Test(4,()=>PrimeSquares(1, 3, 3)); // answer: 997 787 733
+
     Test(1, () => ToyDlxPage68());
     Test(1, () => ToyColorPage89(dump: false));
     Test(92, () => NQueens(8, useSecondary: true));
@@ -26,7 +32,7 @@ if (false)
     Test(11520, () => Soma(false));
 }
 
-//return;
+return;
 
 
 //return;
@@ -44,15 +50,13 @@ dl.Options.MemsDumpStepSize = 1;
 dl.Options.MemsDumpStepSize = 100_000_000;
 //dl.Options.MemsDumpStepSize = 1_000_000_000;
 
-//NQueens(16, mrv: true, topK:0); // 92 solutions
+//NQueens(12, mrv: true, topK:0); // 92 solutions
 
-PrimeSquares(1, 3, 3); // answer: 
-PrimeSquares(1, 3, 4); // answer: 
-
-
+//PrimeSquares(1, 3, 3); // answer: 997 787 733
+//PrimeSquares(1, 3, 4); // answer:  8999 8699 7717
 //PrimeSquares(-1, 3, 3); // answer: 113 307 139
 //PrimeSquares(-1, 3, 4); // answer: 2111 1031 1193
-PrimeSquares(-1, 3, 5); // answer: 21211 10301 11393
+//PrimeSquares(-1, 3, 5); // answer: 21211 10301 11393
 //PrimeSquares(-1, 3, 6); // answer: 111211 100103 331171
 //PrimeSquares(-1, 3, 7); // answer: 1111211 1000403 3193171
 return;
@@ -285,16 +289,6 @@ Trace.Assert(LangfordPairs(3, false)==2);
         Trace.Assert(0 < icost && icost < Int64.MaxValue/(2*(width+height)));
         return icost;
     }
-
-    foreach (var p in new[] {113,331,191,131,139,311 })
-    {
-        Console.WriteLine($"{p} - >{Cost(p)}");
-
-    }
-    Console.WriteLine($"Cost: 113 331 191 {Cost(113) + Cost(331) + Cost(191) + Cost(131) + Cost(139) + Cost(311)}");
-    Console.WriteLine($"Cost: 113 331 191 {Cost(113) + Cost(331) + Cost(191) + Cost(131) + Cost(139) + Cost(311)}");
-    Console.WriteLine($"Cost: 113 307 139 {Cost(113) + Cost(307) + Cost(139) + Cost(131) + Cost(103) + Cost(379)}");
-
 
     // options with cost
     foreach (var prime in primesH)
