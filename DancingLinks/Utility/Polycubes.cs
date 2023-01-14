@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace DancingLinks;
+namespace Lomont.Algorithms.Utility;
 
 public static class Polycubes
 {
@@ -36,17 +36,17 @@ public static class Polycubes
 
             ulong hash = 0; // cells set
             for (var i = minx; i <= maxx; ++i)
-            for (var j = miny; j <= maxy; ++j)
-            for (var k = minz; k <= maxz; ++k)
-            {
-                var (i1, j1, k1) = (i, j, k); // lambda capture
-                var c = CountMatching(p => p.i == i1 && p.j == j1 && p.k == k1);
-                if (c == 1)
-                {
-                    var ind = (i - minx) + 4 * (j - miny) + 16 * (k - minz);
-                    hash |= 1UL << ind;
-                }
-            }
+                for (var j = miny; j <= maxy; ++j)
+                    for (var k = minz; k <= maxz; ++k)
+                    {
+                        var (i1, j1, k1) = (i, j, k); // lambda capture
+                        var c = CountMatching(p => p.i == i1 && p.j == j1 && p.k == k1);
+                        if (c == 1)
+                        {
+                            var ind = i - minx + 4 * (j - miny) + 16 * (k - minz);
+                            hash |= 1UL << ind;
+                        }
+                    }
 
             return hash;
         }
@@ -61,7 +61,7 @@ public static class Polycubes
         /// <returns></returns>
         public IEnumerable<Piece> GetOrientations(bool allowFlips = true)
         {
-            var temp = new Piece(this.s, Name);
+            var temp = new Piece(s, Name);
             var seen = new HashSet<ulong>(); // discard views already seen
             for (var top = 0; top < 6; ++top)
             {
@@ -125,7 +125,7 @@ public static class Polycubes
 
         void Map(int v, Func<int, int, int, (int, int, int)> perm)
         {
-            v = ((v % 4) + 4) % 4; // positive mod
+            v = (v % 4 + 4) % 4; // positive mod
             while (v-- > 0)
             {
                 for (var i = 0; i < s.Length; i += 3)
@@ -154,21 +154,21 @@ public static class Polycubes
     // get soma cube piece 0-6
     public static Piece GetSoma(int index)
     {
-        index = ((index % 7) + 7) % 7; // positive mod
+        index = (index % 7 + 7) % 7; // positive mod
         var len = index == 0 ? 3 : 4;
-        var start = index == 0 ? 0 : 3 + 4*(index - 1);
+        var start = index == 0 ? 0 : 3 + 4 * (index - 1);
         return new Piece(SomaDefs.Skip(start * 3).Take(len * 3).ToArray(), SomaNames[index]);
     }
 
     // 7 soma cubes, naming from Knuth TAOCP 4B 7.2.2.1
-    static string[] SomaNames = { "bent","ell","tee","skew","L-twist","R-twist","claw"};
+    static string[] SomaNames = { "bent", "ell", "tee", "skew", "L-twist", "R-twist", "claw" };
     static readonly int[] SomaDefs = new int[] // 4 xyz cells except 0 is 3 xyz cells
     {
         0,0,0, 0,1,0, 1,0,0,
 
         0,0,0, 0,1,0, 1,0,0, 0,2,0,
 
-        0,0,0, 1,0,0, 2,0,0, 1,1,0, 
+        0,0,0, 1,0,0, 2,0,0, 1,1,0,
 
         0,0,0, 1,0,0, 1,1,0, 2,1,0,
 

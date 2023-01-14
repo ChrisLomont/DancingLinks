@@ -25,7 +25,6 @@ SOFTWARE.
 
 using System.Diagnostics;
 using System.Text.RegularExpressions;
-using static Lomont.Algorithms.DancingLinksSolver.SolverOptions;
 
 namespace Lomont.Algorithms;
 
@@ -39,7 +38,7 @@ namespace Lomont.Algorithms;
 //       Also references his 2002 paper Dancing Links
 // Some of my older version comments :
 // Chris Lomont, 2015, 
-//     - added dumping the state, lineEnd, and solutionEnd, UseGolumbHeuristic
+//     - added dumping the state, lineEnd, and solutionEnd, UseGolombHeuristic
 //     - added SolutionRecorderDelegate for nicer solution handling
 // Chris Lomont, 2013, C# ported from earlier Lomont C++ version
 
@@ -137,7 +136,6 @@ public class DancingLinksSolver
         formatter = new Formatter(this);
         Stats = new LogStats(this);
         Clear();
-        output = TextWriter.Null;
     }
 
     /// <summary>
@@ -164,6 +162,10 @@ public class DancingLinksSolver
 
     public class SolverOptions
     {
+        /// <summary>
+        /// Where to send output
+        /// </summary>
+        public TextWriter Output { get; set;  } = TextWriter.Null;
 
         [Flags]
         public enum ShowFlags
@@ -410,8 +412,8 @@ public class DancingLinksSolver
     /// <param name="dumpOutput"></param>
     public void DumpNodes(TextWriter dumpOutput)
     {
-        dumpOutput.WriteLine($"------------------");
-        dumpOutput.WriteLine($"i NAME LLINK RLINK");
+        dumpOutput.WriteLine("------------------");
+        dumpOutput.WriteLine("i NAME LLINK RLINK");
         for (var i = 0; i < NameNodeCount; ++i)
             dumpOutput.WriteLine($"{i}: {NAME(i)} {LLINK(i)} {RLINK(i)}");
 
@@ -421,7 +423,7 @@ public class DancingLinksSolver
             cs = "COLOR";
         }
 
-        dumpOutput.WriteLine($"------------------");
+        dumpOutput.WriteLine("------------------");
         dumpOutput.WriteLine($"x LEN ULINK DLINK {cs}");
         for (var x = 0; x < NameNodeCount; ++x)
         {
@@ -430,7 +432,7 @@ public class DancingLinksSolver
             dumpOutput.WriteLine($"{x}: {LEN(x)} {ULINK(x)} {DLINK(x)} {ce}");
         }
 
-        dumpOutput.WriteLine($"------------------");
+        dumpOutput.WriteLine("------------------");
         dumpOutput.WriteLine($"x TOP ULINK DLINK {cs}");
         for (var x = NameNodeCount; x < NodeCount; ++x)
         {
@@ -450,7 +452,7 @@ public class DancingLinksSolver
     public int OptionCount { get; private set; } = 0; // count of options
 
     public long SolutionCount => Stats.SolutionCount;
-    public LogStats Stats { get; private set; }
+    public LogStats Stats { get; }
 
     public class LogStats
     {
@@ -463,12 +465,12 @@ public class DancingLinksSolver
         public void Update() => Updates++;
 
         // max possible level 
-        public int maxAllowedLevel = 0;
+        public int MaxAllowedLevel = 0;
 
         /// <summary>
         /// Increment mems
         /// </summary>
-        public void Mem() => memAccesses++;
+        public void Mem() => MemAccesses++;
 
         public void ResetStats(int optionCount)
         {
@@ -477,22 +479,22 @@ public class DancingLinksSolver
             Updates = 0;
             nodeCount = 0;
             maxDegree = 0;
-            maxLevelSeen = 0;
-            memAccesses = 0; 
+            MaxLevelSeen = 0;
+            MemAccesses = 0; 
             inputMemAccesses = 0;
             nextMemoryDump = -1; // memory threshold
             
             // max allowed levels is (optionCount+1) * max of bounds
-            maxAllowedLevel = optionCount + 1;
+            MaxAllowedLevel = optionCount + 1;
             if (dl.hasMultiplicities)
-                maxAllowedLevel *= dl.bound.Max();
+                MaxAllowedLevel *= dl.bound.Max();
 
-            profile = new long[maxAllowedLevel];
+            profile = new long[MaxAllowedLevel];
             choice = new int[optionCount + 1];
         }
 
         // timer for timing entire solution search
-        Stopwatch timer = new();
+        readonly Stopwatch timer = new();
 
         public void StartTimer() => timer.Restart();
 
@@ -515,7 +517,7 @@ public class DancingLinksSolver
             nodeCount++; // nodes explored
 
             if (nextMemoryDump == -1) nextMemoryDump = dl.Options.MemsDumpStepSize;
-            if (dl.Options.MemsDumpStepSize > 0 && (memAccesses >= nextMemoryDump) && 
+            if (dl.Options.MemsDumpStepSize > 0 && (MemAccesses >= nextMemoryDump) && 
                 dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Basics))
             {
                 nextMemoryDump += dl.Options.MemsDumpStepSize;
@@ -525,9 +527,9 @@ public class DancingLinksSolver
                     dl.formatter.PrintProgress(level, x);
             }
 
-            if (memAccesses >= dl.Options.MemsStopThreshold)
+            if (MemAccesses >= dl.Options.MemsStopThreshold)
             {
-                dl.output.WriteLine("TIMEOUT!");
+                dl.Output.WriteLine("TIMEOUT!");
                 return true; // done!
             }
 
@@ -536,15 +538,15 @@ public class DancingLinksSolver
 
         public bool TrackLevels(int l)
         {
-            if (l > maxLevelSeen)
+            if (l > MaxLevelSeen)
             {
-                if (l >= maxAllowedLevel)
+                if (l >= MaxAllowedLevel)
                 {
-                    dl.output.WriteLine("Too many levels!");
+                    dl.Output.WriteLine("Too many levels!");
                     return true; // done
                 }
 
-                maxLevelSeen = l;
+                MaxLevelSeen = l;
             }
 
             return false;
@@ -570,10 +572,10 @@ public class DancingLinksSolver
 
             if (dl.Options.Spacing > 0 && (SolutionCount % dl.Options.Spacing == 0))
             {
-                dl.output.WriteLine($"{SolutionCount}:");
+                dl.Output.WriteLine($"{SolutionCount}:");
                 for (var k = 0; k < l; k++)
                     dl.formatter.PrintOption(choice[k]);
-                dl.output.Flush();
+                dl.Output.Flush();
             }
 
             nodeCount++; 
@@ -583,23 +585,23 @@ public class DancingLinksSolver
             return false;
         }
 
-        public void TrackLevels(int type, int l, int p = -1, int best_item = -1, int tmax = -1)
+        public void TrackLevels(int type, int l, int p = -1, int bestItem = -1, int tmax = -1)
         {
             var good = dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Details) &&
-                       l < dl.Options.ShowChoicesMax && l >= maxLevelSeen - dl.Options.ShowChoicesGap;
+                       l < dl.Options.ShowChoicesMax && l >= MaxLevelSeen - dl.Options.ShowChoicesGap;
             if (!good) return;
 
             if (type == 0)
-                dl.output.Write($"Level {l}");
+                dl.Output.Write($"Level {l}");
             if (type == 1)
-                dl.output.Write($" {dl.NAME(p)} {dl.LEN(p)}");
+                dl.Output.Write($" {dl.NAME(p)} {dl.LEN(p)}");
 
             if (type == 2)
             {
-                dl.output.WriteLine($" branching on {dl.NAME(best_item)} {tmax}");
+                dl.Output.WriteLine($" branching on {dl.NAME(bestItem)} {tmax}");
                 if (dl.Options.ShapeOutput != null)
                 {
-                    dl.Options.ShapeOutput.WriteLine($"{tmax} {dl.NAME(best_item)}");
+                    dl.Options.ShapeOutput.WriteLine($"{tmax} {dl.NAME(bestItem)}");
                     dl.Options.ShapeOutput.Flush();
                 }
 
@@ -611,36 +613,36 @@ public class DancingLinksSolver
         {
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Choices) && l < dl.Options.ShowChoicesMax)
             {
-                dl.output.Write($"L{l}:");
+                dl.Output.Write($"L{l}:");
                 dl.formatter.PrintOption(xl);
             }
         }
 
         public void ShowFinalStats(int[] x)
         {
-            var (imems, mems) = (imems: this.inputMemAccesses, mems: this.memAccesses); // store updates here before reporting
+            var (imems, mems) = (imems: this.inputMemAccesses, mems: this.MemAccesses); // store updates here before reporting
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Totals))
             {
-                dl.output.Write("Item totals:");
+                dl.Output.Write("Item totals:");
                 for (var k = 1; k < dl.NameNodeCount; k++)
                 {
                     if (k == dl.N1)
-                        dl.output.Write(" |");
-                    dl.output.Write($" {dl.LEN(k)}");
+                        dl.Output.Write(" |");
+                    dl.Output.Write($" {dl.LEN(k)}");
                 }
 
-                dl.output.WriteLine("");
+                dl.Output.WriteLine("");
             }
 
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Profile))
             {
-                dl.output.WriteLine("Profile:");
-                for (var level = 0; level <= maxLevelSeen; level++)
-                    dl.output.WriteLine($"   {level} {profile[level]}");
+                dl.Output.WriteLine("Profile:");
+                for (var level = 0; level <= MaxLevelSeen; level++)
+                    dl.Output.WriteLine($"   {level} {profile[level]}");
             }
 
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.MaxDegree))
-                dl.output.WriteLine($"The maximum branching degree was {maxDegree}");
+                dl.Output.WriteLine($"The maximum branching degree was {maxDegree}");
 
             if (dl.Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Basics))
             {
@@ -651,8 +653,8 @@ public class DancingLinksSolver
 
 
                 var plural = SolutionCount == 1 ? "" : "s";
-                dl.output.WriteLine($"{SolutionCount} solution{plural} in {timer.Elapsed}");
-                dl.output.WriteLine($"{imems}+{mems} mems, {Updates} updates, {bytes} bytes memory, {nodeCount} nodes");
+                dl.Output.WriteLine($"{SolutionCount} solution{plural} in {timer.Elapsed}");
+                dl.Output.WriteLine($"{imems}+{mems} mems, {Updates} updates, {bytes} bytes memory, {nodeCount} nodes");
                 // todo - mems/soln? Nodes/sec? solns/sec?
             }
 
@@ -660,17 +662,17 @@ public class DancingLinksSolver
                 dl.Options.ShapeOutput.Close(); // todo -  dont; close console.out - how to cloe file but not this?
         }
 
-#region Implementation
+        #region Implementation
 
-        DancingLinksSolver dl;
-        public int maxLevelSeen = 0; // max level seen while searching
+        readonly DancingLinksSolver dl;
+        public int MaxLevelSeen = 0; // max level seen while searching
         int maxDegree = 0;
 
         long nodeCount = 0; // nodes walked
         // (one up and down is one mem, basically # of 64 bit line accesses
         // nodes padded with _reserve_ field to pad to 128 bits to match Knuth
 
-        public long memAccesses = 0; // each mem access 
+        public long MemAccesses = 0; // each mem access 
         long inputMemAccesses = 0; // mems to initialize, set in solver
         long[] profile = new long[1];
         long nextMemoryDump = -1; // next memory threshold for output, or -1 when eeding set
@@ -688,7 +690,7 @@ public class DancingLinksSolver
 /// </summary>
     class Formatter
     {
-        DancingLinksSolver dl;
+        readonly DancingLinksSolver dl;
         
         public Formatter(DancingLinksSolver dl) => this.dl = dl;
 
@@ -696,7 +698,7 @@ public class DancingLinksSolver
         {
             if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
             {
-                dl.output.WriteLine($"Illegal option {p}!");
+                dl.Output.WriteLine($"Illegal option {p}!");
                 return 0;
             }
 
@@ -718,7 +720,7 @@ public class DancingLinksSolver
             //todo
             if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
             {
-                dl.output.WriteLine($"Illegal option {p}!");
+                dl.Output.WriteLine($"Illegal option {p}!");
                 yield break;
             }
 
@@ -766,60 +768,60 @@ public class DancingLinksSolver
             {
                 if (p < dl.NameNodeCount || p >= dl.NodeCount || dl.TOP(p) <= 0)
                 {
-                    dl.output.WriteLine($"Illegal option {p}!");
+                    dl.Output.WriteLine($"Illegal option {p}!");
                     return;
                 }
                 foreach (var itemText in GetOptionItems(p, normalizeOrder: false))
-                    dl.output.WriteLine(itemText);
-            var s = ItemCost(p);
+                    dl.Output.WriteLine(itemText);
+                var s = ItemCost(p);
 
-            int k, j, q;
+                int k, j, q;
 
-            for (q = dl.DLINK(dl.TOP(p)), k = 1; q != p; k++)
-            {
-                if (q == dl.TOP(p))
+                for (q = dl.DLINK(dl.TOP(p)), k = 1; q != p; k++)
                 {
-                    dl.output.Write(" (?)");
-                    goto finish;
+                    if (q == dl.TOP(p))
+                    {
+                        dl.Output.Write(" (?)");
+                        goto finish;
+                    }
+                    q = dl.DLINK(q);
                 }
-                q = dl.DLINK(q);
-            }
 
-            for (q = dl.DLINK(dl.TOP(p)), j = 0; q >= dl.NameNodeCount; q = dl.DLINK(q), j++)
-                if (dl.COST(q) >= costThreshold)
-                    break;
-            dl.output.Write($" ({k} of {j})");
+                for (q = dl.DLINK(dl.TOP(p)), j = 0; q >= dl.NameNodeCount; q = dl.DLINK(q), j++)
+                    if (dl.COST(q) >= costThreshold)
+                        break;
+                dl.Output.Write($" ({k} of {j})");
 
-        finish:
+                finish:
 
-            if (s + dl.COST(p) != 0)
-                dl.output.Write($" {s + dl.COST(p)} [{dl.COST(p)}]");
-            dl.output.WriteLine();
+                if (s + dl.COST(p) != 0)
+                    dl.Output.Write($" {s + dl.COST(p)} [{dl.COST(p)}]");
+                dl.Output.WriteLine();
         }
 
         public void PrintState(int level, int[] choice)
         {
             // based on Exercise #12, as noted on page 73
 
-            dl.output.WriteLine($"Current state (level {level})");
+            dl.Output.WriteLine($"Current state (level {level})");
             for (var l = 0; l < level; l++)
             {
                 PrintOption(choice[l]);
                 if (l >= dl.Options.ShowLevelMax)
                 {
-                    dl.output.WriteLine(" ...");
+                    dl.Output.WriteLine(" ...");
                     break;
                 }
             }
 
-            dl.output.WriteLine($"{dl.SolutionCount} solutions, {dl.Stats.memAccesses} mems, and max level {dl.Stats.maxLevelSeen} so far.");
+            dl.Output.WriteLine($"{dl.SolutionCount} solutions, {dl.Stats.MemAccesses} mems, and max level {dl.Stats.MaxLevelSeen} so far.");
         }
 
         public void PrintProgress(int level, int[] choice)
         {
             // based on Exercise #12, as noted on page 73
 
-            dl.output.Write($" after {dl.Stats.memAccesses} mems: {dl.SolutionCount} sols, ");
+            dl.Output.Write($" after {dl.Stats.MemAccesses} mems: {dl.SolutionCount} sols, ");
             double f = 0, fd = 1;
 
             for (var l = 0; l < level; l++)
@@ -832,7 +834,7 @@ public class DancingLinksSolver
                 {
                     if (k > dl.N)
                     {
-                        dl.output.WriteLine("ERROR - bad fields in Print Progress!");
+                        dl.Output.WriteLine("ERROR - bad fields in Print Progress!");
                         break;
                     }
 
@@ -841,11 +843,11 @@ public class DancingLinksSolver
 
                 fd *= d;
                 f += (k - 1) / fd;
-                dl.output.Write($"{Enc(k)}{Enc(d)} ");
+                dl.Output.Write($"{Enc(k)}{Enc(d)} ");
 
                 if (l >= dl.Options.ShowLevelMax)
                 {
-                    dl.output.Write("...");
+                    dl.Output.Write("...");
                     break;
                 }
             }
@@ -861,7 +863,7 @@ public class DancingLinksSolver
                 }
             );
 
-            dl.output.WriteLine($" {(f + 0.5 / fd):F5}");
+            dl.Output.WriteLine($" {(f + 0.5 / fd):F5}");
         }
 
         /// <summary>
@@ -869,46 +871,31 @@ public class DancingLinksSolver
         /// </summary>
         public void PrintSolution(IEnumerable<List<string>> solutionNodes)
         {
-            var os = dl.output;
+            var os = dl.Output;
             os.WriteLine($"Solution {dl.SolutionCount} (found after {dl.Stats.Updates} deque removals):");
             foreach (var line in solutionNodes)
             {
                 foreach (var s in line)
                     os.Write($"{s} ");
-                os.WriteLine(lineEnd);
+                os.WriteLine(LineEnd);
             }
 
-            os.WriteLine(solutionEnd);
+            os.WriteLine(SolutionEnd);
         }
 
         // set from outside, useful for separating for parsers
-        public string lineEnd = "";
-        public string solutionEnd = "";
+        public string LineEnd = "";
+        public string SolutionEnd = "";
 
       
         public void Reset()
         {
-            lineEnd = "";
-            solutionEnd = "";
+            LineEnd = "";
+            SolutionEnd = "";
         }
     }
 
-    private Formatter formatter;
-
-    /// <summary>
-    /// Set where the output text goes
-    /// Can be used like SetOutput(Console.Out);
-    /// </summary>
-    /// <param name="outputWriter">the text writer where output goes</param>
-    /// <param name="newLineEnd">An optional marker to denote line ends in each solution</param>
-    /// <param name="newSolutionEnd">An optional marker to denote a solution end</param>
-    public void SetOutput(TextWriter outputWriter, string newLineEnd = "", string newSolutionEnd = "")
-    {
-        // todo - merge into options?
-        output = outputWriter;
-        formatter.lineEnd = newLineEnd;
-        formatter.solutionEnd = newSolutionEnd;
-    }
+    private readonly Formatter formatter;
 
     /// <summary>
     /// Solve the problem instance.
@@ -940,8 +927,8 @@ public class DancingLinksSolver
         
 
         // todo - output flavor of problem too: DLX, DLC< DLM, X$, etc.
-        if (Options.OutputFlags.HasFlag(ShowFlags.Basics))
-            output.WriteLine($"Solving with {items.Count} items and {options.Count} options using algorithm {type}");
+        if (Options.OutputFlags.HasFlag(SolverOptions.ShowFlags.Basics))
+            Output.WriteLine($"Solving with {items.Count} items and {options.Count} options using algorithm {type}");
         
         if (hasCost)
         {
@@ -975,7 +962,7 @@ public class DancingLinksSolver
         int j = 0, p = 0;
 
         // solution
-        var x = new int[Stats.maxAllowedLevel]; // overkill in space
+        var x = new int[Stats.MaxAllowedLevel]; // overkill in space
 
         var done = false;
         // this follows Knuth TAOCP notation and format
@@ -1156,8 +1143,8 @@ public class DancingLinksSolver
         int j = 0, p = 0;
 
         // solution
-        var x = new int[Stats.maxAllowedLevel]; // overkill in space
-        var FT = new int[Stats.maxAllowedLevel]; // "First Tweaks" to track start of pointer chains
+        var x = new int[Stats.MaxAllowedLevel]; // overkill in space
+        var FT = new int[Stats.MaxAllowedLevel]; // "First Tweaks" to track start of pointer chains
 
 
         void Chk(int choice)
@@ -1264,10 +1251,7 @@ public class DancingLinksSolver
 
                     // see exercise 166 answer - get branching factor
                     var θi = Monus(LEN(i) + 1, Monus(BOUND(i), SLACK(i)));
-                    if (θi == 0) // NOTE: this branch different than X, XCC
-                        step = 9;
-                    else
-                        step = 4;
+                    step = θi == 0 ? 9 : 4; // NOTE: this branch different than X, XCC
                     int Monus(int a, int b) => Int32.Max(a - b, 0);
                     break;
                 case 4: // prepare to branch on i
@@ -1284,8 +1268,7 @@ public class DancingLinksSolver
                     step = 6; // default
                     if (BOUND(i) == 0 && SLACK(i) == 0)
                     {
-                        if (x[l] != i) step = 6;
-                        else step = 8; // 8 is like algo C
+                        step = x[l] != i ? 6 : 8; // 8 is like algo C
                     }
                     else if (LEN(i) <= BOUND(i) - SLACK(i))
                     {
@@ -1376,10 +1359,7 @@ public class DancingLinksSolver
                     }
                     else
                     {
-                        if (BOUND(i) == 0)
-                            Untweak(l, FT, true);
-                        else
-                            Untweak(l, FT, false);
+                        Untweak(l, FT, BOUND(i) == 0);
                     }
 
                     BOUND(i, BOUND(i) + 1);
@@ -1444,9 +1424,9 @@ public class DancingLinksSolver
 
         var step = 1; // represent algo step C$1 through C$8
         int Z = 0, l = 0, i = 0; //, xl = 0;
-        long [] C = new long[Stats.maxAllowedLevel]; // cost by level
-        long[] TH0 = new long[Stats.maxAllowedLevel]; // threshold_0 by level, = BEST- C[l] - COST(x[l])
-        long[] TH = new long[Stats.maxAllowedLevel]; // threshold by level, decreases
+        long [] C = new long[Stats.MaxAllowedLevel]; // cost by level
+        long[] TH0 = new long[Stats.MaxAllowedLevel]; // threshold_0 by level, = BEST- C[l] - COST(x[l])
+        long[] TH = new long[Stats.MaxAllowedLevel]; // threshold by level, decreases
 
         best = new MaxHeap<List<List<string>>>(topKbyCosts); // track top K best costs
         // todo; - track best solutions also
@@ -1459,7 +1439,7 @@ public class DancingLinksSolver
         int j = 0, p = 0;
 
         // solution
-        var x = new int[Stats.maxAllowedLevel]; // overkill in space
+        var x = new int[Stats.MaxAllowedLevel]; // overkill in space
 
         var done = false;
         // this follows Knuth TAOCP notation and format
@@ -1599,7 +1579,7 @@ public class DancingLinksSolver
 
                         j = RLINK(j);
                     }
-                }
+                    }
                     // todo - restore Stats.TrackLevels(1,l,p)
 
                   
@@ -1708,21 +1688,21 @@ public class DancingLinksSolver
             for (q = 0, p = RLINK(q); ; q = p, p = RLINK(p))
             { // next = RLINK, pref = LLINK
                 if (LLINK(p) != q)
-                    output.WriteLine($"Bad LLINK field at item {NAME(p)}");
+                    Output.WriteLine($"Bad LLINK field at item {NAME(p)}");
                 if (p == 0) break;
 
                 for (qq = p, pp = DLINK(qq), k = 0; ; qq = pp, pp = DLINK(pp), k++)
                 {
                     if (ULINK(pp) != qq)
-                        output.WriteLine($"Bad ULINK field at node {pp}");
+                        Output.WriteLine($"Bad ULINK field at node {pp}");
                     if (pp == p) break;
                     if (TOP(pp) != p)
-                        output.WriteLine($"Bad TOP field at node {pp}");
+                        Output.WriteLine($"Bad TOP field at node {pp}");
                     if (qq > p && COST(pp) < COST(qq))
-                        output.WriteLine($"Costs out of order between nodes {pp} and {qq}");
+                        Output.WriteLine($"Costs out of order between nodes {pp} and {qq}");
                 }
                 if (p < N && LEN(p) != k)  // should this be N? N1? N2?
-                    output.WriteLine($"Bad LEN field in item {NAME(p)}");
+                    Output.WriteLine($"Bad LEN field in item {NAME(p)}");
             }
         }
 #endif
@@ -2101,15 +2081,12 @@ public class DancingLinksSolver
         if (solutionEventHandler == null && !printSoln)
             return true; // nothing else to do
         
-        if (solutionOptions == null)
-            solutionOptions = GetSolution(x, l);
+        solutionOptions ??= GetSolution(x, l);
 
         if (printSoln)
             formatter.PrintSolution(solutionOptions);
 
-        return solutionEventHandler == null
-            ? true
-            : solutionEventHandler(Stats.SolutionCount, Stats.Updates, solutionOptions);
+        return solutionEventHandler == null || solutionEventHandler(Stats.SolutionCount, Stats.Updates, solutionOptions);
     }
 
     Random? rand = null;
@@ -2199,7 +2176,7 @@ public class DancingLinksSolver
         void Error(string s)
         {
             ok = false;
-            output.WriteLine(s);
+            Output.WriteLine(s);
         }
     }
 
@@ -2460,7 +2437,7 @@ public class DancingLinksSolver
         return costs[x];
     }
 
-    private List<long> costs = new(); // one per node
+    private readonly List<long> costs = new(); // one per node
     void COST(int x, long val)
     {
         while (costs.Count <= x)
@@ -2539,7 +2516,7 @@ public class DancingLinksSolver
             for (var pass = 0; pass < 1000; ++pass)
             {
                 var rr = new Random(pass);
-                var h = new DancingLinksSolver.MaxHeap<int>(5 + pass/6);
+                var h = new MaxHeap<int>(5 + pass/6);
                 Console.WriteLine($"New tree size {h.Size}");
                 for (var k = 0; k < 2 * (pass + 1); ++k)
                 {
@@ -2639,7 +2616,7 @@ public class DancingLinksSolver
     int N2 = 0;       // 
 
 
-    TextWriter output;
+    TextWriter Output => Options.Output;
     int spacerIndex = 0; // decrement to fill in TOP
     int lastSpacerIndex = 0;
     bool hasColor = false;
@@ -2661,8 +2638,8 @@ public class DancingLinksSolver
     readonly Dictionary<string, int> ColorMap = new(); // color name to index in Colors
 
     // for multiplicities, every primary item has SLACK and BOUND
-    List<int> slack = new();
-    List<int> bound = new();
+    readonly List<int> slack = new();
+    readonly List<int> bound = new();
 
     int SLACK(int x)
     {
@@ -2698,7 +2675,7 @@ public class DancingLinksSolver
         public void SetB(int val) => b = val; // trying to get to work as a struct - does not work...
         public void SetC(int val) => c = val; // trying to get to work as a struct - does not work...
         public void SetD(int val) => datum = val; // trying to get to work as a struct - does not work...
-        public string Name { get; private set; }
+        public string Name { get; }
         public int b = 0, c = 0;
         public int datum = 0; // pads to 128 bits, used as info per node
     }
@@ -2809,6 +2786,20 @@ public class DancingLinksSolver
     {
     }
 
-#endregion
+    /// <summary>
+    /// Set where the output text goes
+    /// Can be used like SetOutput(Console.Out);
+    /// </summary>
+    /// <param name="outputWriter">the text writer where output goes</param>
+    /// <param name="newLineEnd">An optional marker to denote line ends in each solution</param>
+    /// <param name="newSolutionEnd">An optional marker to denote a solution end</param>
+    [Obsolete("SetOutput is deprecated.")]
+    public void SetOutput(TextWriter outputWriter, string newLineEnd = "", string newSolutionEnd = "")
+    {
+        throw new NotImplementedException("Use Options.Output");
+    }
+
+
+    #endregion
 
 }

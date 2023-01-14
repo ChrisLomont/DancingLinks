@@ -1,14 +1,14 @@
-﻿namespace DancingLinks;
+﻿namespace Lomont.Algorithms.Utility;
 
 public static class Polyominoes
 {
-    
+
     public class Piece
     {
         public Piece(int[] p, int rot, int flip, string name)
         {
             s = new int[p.Length];
-            Array.Copy(p,s,p.Length);
+            Array.Copy(p, s, p.Length);
 
             this.rot = rot;
             this.flip = flip;
@@ -33,10 +33,10 @@ public static class Polyominoes
         {
             var t = rot * (flip + 1);
 
-            var temp = new Piece(this.s,rot,flip,Name);
+            var temp = new Piece(s, rot, flip, Name);
             for (var orientation = 0; orientation < t; ++orientation)
             {
-                yield return new Piece(temp.s, rot, flip,Name);
+                yield return new Piece(temp.s, rot, flip, Name);
                 temp.Rotate(); // rot by 90
                 if (flip == 1 && orientation == rot - 1)
                 {
@@ -50,8 +50,8 @@ public static class Polyominoes
 
         public IEnumerable<(int x, int y)> Coords()
         {
-            for (var i = 0; i < s.Length; i+=2)
-                yield return (s[i], s[i+1]);
+            for (var i = 0; i < s.Length; i += 2)
+                yield return (s[i], s[i + 1]);
         }
 
         public void Rotate()
@@ -76,7 +76,7 @@ public static class Polyominoes
         {
             var minx = s.Chunk(2).Min(p => p[0]);
             var miny = s.Chunk(2).Min(p => p[1]);
-            Shift(-minx,-miny);
+            Shift(-minx, -miny);
         }
         // count how many cells match functor
         // good for checking piece is in some region by checking count is 5
@@ -85,14 +85,14 @@ public static class Polyominoes
 
     // unique rotations and flips for pentominoes
     //                             O  P  Q  R  S  T  U  V  W  X  Y  Z
-    static int[] p5rots = new[]  { 2, 4, 4, 4, 4, 4, 4, 4, 4, 1, 4, 2 };
-    static int[] p5Flips = new[] { 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1 };
+    static readonly int[] P5Rots = new[] { 2, 4, 4, 4, 4, 4, 4, 4, 4, 1, 4, 2 };
+    static readonly int[] P5Flips = new[] { 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1 };
 
     // get piece 0-11, Conway names 'O','P',...,'Y','Z'
     public static Piece GetPentomino(int index)
     {
-        index = ((index%12)+12)%12; // positive mod
-        return new Piece(PentominoDefs.Skip(index * 5 * 2).Take(10).ToArray(), p5rots[index], p5Flips[index],((char)('O'+index)).ToString());
+        index = (index % 12 + 12) % 12; // positive mod
+        return new Piece(PentominoDefs.Skip(index * 5 * 2).Take(10).ToArray(), P5Rots[index], P5Flips[index], ((char)('O' + index)).ToString());
     }
 
     // 12 pentominoes, Conway notation, O,P,..,W,X,Y,Z
